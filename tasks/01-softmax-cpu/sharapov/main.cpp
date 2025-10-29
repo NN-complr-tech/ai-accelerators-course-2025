@@ -84,15 +84,12 @@ std::vector<float> run_openmp(const std::vector<float> &matrix, std::size_t n) {
 void sequential_simd_row(const size_t &row, const size_t &n, float *result) {
   float denominator = 0.0f;
 
-  size_t col = 8;
+  size_t col = 0;
 
-  __m256 res_vec = _mm256_loadu_ps(&result[row * n]);
-  __m256 exp_vec = exp256_ps(res_vec);
-  _mm256_storeu_ps(&result[row * n], exp_vec);
-  __m256 denom_vec = exp_vec;
+  __m256 denom_vec = _mm256_setzero_ps();
   for (; col + 8 <= n; col += 8) {
-    res_vec = _mm256_loadu_ps(&result[row * n + col]);
-    exp_vec = exp256_ps(res_vec);
+    __m256 res_vec = _mm256_loadu_ps(&result[row * n + col]);
+    __m256 exp_vec = exp256_ps(res_vec);
     _mm256_storeu_ps(&result[row * n + col], exp_vec);
     denom_vec = _mm256_add_ps(denom_vec, exp_vec);
   }
@@ -108,14 +105,11 @@ void sequential_simd_row(const size_t &row, const size_t &n, float *result) {
   }
   float inv_denominator = 1.0f / denominator;
 
-  col = 8;
+  col = 0;
 
-  res_vec = _mm256_loadu_ps(&result[row * n]);
   const __m256 inv_denom_vec = _mm256_set1_ps(inv_denominator);
-  res_vec = _mm256_mul_ps(res_vec, inv_denom_vec);
-  _mm256_storeu_ps(&result[row * n], res_vec);
   for (; col + 8 <= n; col += 8) {
-    res_vec = _mm256_loadu_ps(&result[row * n + col]);
+    __m256 res_vec = _mm256_loadu_ps(&result[row * n + col]);
     res_vec = _mm256_mul_ps(res_vec, inv_denom_vec);
     _mm256_storeu_ps(&result[row * n + col], res_vec);
   }
@@ -126,14 +120,9 @@ void sequential_simd_row(const size_t &row, const size_t &n, float *result) {
 
 std::vector<float> run_simd(const std::vector<float> &matrix, std::size_t n) {
   std::vector result = matrix;
-  if (n >= 8) {
-    for (size_t row = 0; row < n; ++row) {
-      sequential_simd_row(row, n, result.data());
-    }
-  } else {
-    for (size_t row = 0; row < n; ++row) {
-      sequential_row(row, n, result.data());
-    }
+
+  for (size_t row = 0; row < n; ++row) {
+    sequential_simd_row(row, n, result.data());
   }
 
   return result;
@@ -143,16 +132,9 @@ std::vector<float> run_openmp_simd(const std::vector<float> &matrix,
                                    std::size_t n) {
   std::vector result = matrix;
 
-  if (n >= 8) {
 #pragma omp parallel for
-    for (size_t row = 0; row < n; ++row) {
-      sequential_simd_row(row, n, result.data());
-    }
-  } else {
-#pragma omp parallel for
-    for (size_t row = 0; row < n; ++row) {
-      sequential_row(row, n, result.data());
-    }
+  for (size_t row = 0; row < n; ++row) {
+    sequential_simd_row(row, n, result.data());
   }
 
   return result;
