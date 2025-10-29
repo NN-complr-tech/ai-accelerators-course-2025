@@ -63,7 +63,6 @@ std::vector<float> run_sequential(const std::vector<float> &matrix,
                                   std::size_t n) {
   std::vector result = matrix;
 
-  std::vector<float> exp_vals(n);
   for (size_t row = 0; row < n; ++row) {
     sequential_row(row, n, result.data());
   }
@@ -127,10 +126,14 @@ void sequential_simd_row(const size_t &row, const size_t &n, float *result) {
 
 std::vector<float> run_simd(const std::vector<float> &matrix, std::size_t n) {
   std::vector result = matrix;
-
-  std::vector<float> exp_vals(n);
-  for (size_t row = 0; row < n; ++row) {
-    sequential_simd_row(row, n, result.data());
+  if (n >= 8) {
+    for (size_t row = 0; row < n; ++row) {
+      sequential_simd_row(row, n, result.data());
+    }
+  } else {
+    for (size_t row = 0; row < n; ++row) {
+      sequential_row(row, n, result.data());
+    }
   }
 
   return result;
@@ -140,9 +143,16 @@ std::vector<float> run_openmp_simd(const std::vector<float> &matrix,
                                    std::size_t n) {
   std::vector result = matrix;
 
+  if (n >= 8) {
 #pragma omp parallel for
-  for (size_t row = 0; row < n; ++row) {
-    sequential_simd_row(row, n, result.data());
+    for (size_t row = 0; row < n; ++row) {
+      sequential_simd_row(row, n, result.data());
+    }
+  } else {
+#pragma omp parallel for
+    for (size_t row = 0; row < n; ++row) {
+      sequential_row(row, n, result.data());
+    }
   }
 
   return result;
