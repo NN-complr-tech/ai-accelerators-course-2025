@@ -118,7 +118,7 @@ inline float calc_sum_of_exp_vec(__m256 vec_of_8_exps) {
   return _mm_cvtss_f32(sum);
 }
 
-void make_matrix(std::vector<float>& result, std::size_t n) {
+void make_matrix(std::vector<float> &result, std::size_t n) {
   // throw std::runtime_error("make_matrix not implemented");
   // std::random_device rd;
   // std::mt19937 gen(rd());
@@ -154,7 +154,8 @@ void print_matrix(const std::vector<float> &matrix, const std::size_t n) {
   std::cout << "\n";
 }
 
-void calcualte_row(const float* address_input, float* address_output, std::size_t n) {
+void calcualte_row(const float *address_input, float *address_output,
+                   std::size_t n) {
   float current_row_sum = 0;
   for (std::size_t idx = 0; idx < n; ++idx) {
     float current_value = std::exp(address_input[idx]);
@@ -284,7 +285,8 @@ std::string format_diff(float diff) {
   return oss.str();
 }
 
-void print_report(std::string_view testName, const RunResult &result, const std::size_t n) {
+void print_report(std::string_view testName, const RunResult &result,
+                  const std::size_t n) {
   if (result) {
     std::cout << testName << ": " << format_time(result.seconds) << " sec ("
               << n * n * 4.0 * 2.0 / (1024.0 * 1024.0 * 1024.0 * result.seconds)
@@ -325,12 +327,12 @@ int main(int argc, char *argv[]) {
 
     std::vector<float> input(n * n);
     make_matrix(input, n);
-    //print_matrix(input, n);
+    // print_matrix(input, n);
 
     std::vector<float> sequential_result;
     const double sequential_seconds = measure_seconds(
         [&]() { return run_sequential(input, n); }, sequential_result);
-    //print_matrix(sequential_result, n);
+    // print_matrix(sequential_result, n);
 
     auto omp_res = run_test_case([&] { return run_openmp(input, n); },
                                  sequential_result, "OpenMP");

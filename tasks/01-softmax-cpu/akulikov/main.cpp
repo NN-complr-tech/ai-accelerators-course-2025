@@ -1,149 +1,125 @@
 #include <immintrin.h>
-#include <omp.h>
-#include <xmmintrin.h>
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <exception>
 #include <functional>
 #include <iomanip>
 #include <iostream>
 #include <random>
-#include <regex>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <thread>
 #include <vector>
 
 namespace {
 std::vector<float> make_matrix(std::size_t n) {
-  size_t matrix_size = n * n;
-  std::vector<float> result(matrix_size);
+  static std::mt19937 gen_eng{42};
 
-  size_t num_threads = omp_get_max_threads();
-  std::vector<size_t> seeds(num_threads);
-  std::random_device rd{};
-  for (auto &seed : seeds) {
-    seed = rd();
+  std::normal_distribution<float> dist{};
+  auto gen = [&]() { return dist(gen_eng); };
+
+  std::vector<float> matrix(n * n);
+
+  std::generate(matrix.begin(), matrix.end(), gen);
+
+  return matrix;
+}
+
+static inline void process_row(const float *row, std::size_t n, float *out) {
+  float rowsum = 0.0f;
+  for (std::size_t j = 0; j < n; j++) {
+    rowsum += std::exp(row[j]);
   }
-
-#pragma omp parallel
-  {
-    std::mt19937 generator(seeds[omp_get_thread_num()]);
-    std::uniform_real_distribution<float> distribution(0.0f, 1000.0f);
-#pragma omp for
-    for (int i = 0; i < matrix_size; ++i) {
-      result[i] = distribution(generator);
-    }
+  const float inv_rowsum = 1.0f / rowsum;
+  for (std::size_t j = 0; j < n; j++) {
+    out[j] = std::exp(row[j]) * inv_rowsum;
   }
-
-  return result;
 }
 
 __m256 exp256_ps(__m256 x);
 
-void sequential_row(const size_t &row, const size_t &n, float *result) {
-  float denominator = 0.0f;
-
-  for (size_t col = 0; col < n; ++col) {
-    result[row * n + col] = std::exp(result[row * n + col]);
-    denominator += result[row * n + col];
+static inline void process_row_simd(const float *row, std::size_t n,
+                                    float *out) {
+  auto y = _mm256_setzero_ps();
+  std::size_t j = 0;
+  for (; j + 8 <= n; j += 8) {
+    auto x = _mm256_loadu_ps(&row[j]);
+    x = exp256_ps(x);
+    y = _mm256_add_ps(y, x);
+  }
+  float tail_sum = 0.0f;
+  for (; j < n; j++) {
+    tail_sum += std::exp(row[j]);
   }
 
-  float inv_denominator = 1.0f / denominator;
-  for (size_t col = 0; col < n; ++col) {
-    result[row * n + col] *= inv_denominator;
+  float rowsum[8];
+  _mm256_storeu_ps(rowsum, y);
+  const float inv_rowsum =
+      1.0f / (rowsum[0] + rowsum[1] + rowsum[2] + rowsum[3] + rowsum[4] +
+              rowsum[5] + rowsum[6] + rowsum[7] + tail_sum);
+
+  const auto inv_rowsum_vec = _mm256_set1_ps(inv_rowsum);
+  for (j = 0; j + 8 <= n; j += 8) {
+    auto x = _mm256_loadu_ps(&row[j]);
+    x = exp256_ps(x);
+    x = _mm256_mul_ps(x, inv_rowsum_vec);
+    _mm256_storeu_ps(&out[j], x);
+  }
+  for (; j < n; j++) {
+    out[j] = std::exp(row[j]) * inv_rowsum;
   }
 }
 
 std::vector<float> run_sequential(const std::vector<float> &matrix,
                                   std::size_t n) {
-  std::vector result = matrix;
+  std::vector<float> res(n * n);
 
-  for (size_t row = 0; row < n; ++row) {
-    sequential_row(row, n, result.data());
+  for (std::size_t i = 0; i < n; i++) {
+    process_row(&matrix[i * n], n, &res[i * n]);
   }
 
-  return result;
+  return res;
 }
 
 std::vector<float> run_openmp(const std::vector<float> &matrix, std::size_t n) {
-  std::vector result = matrix;
+  std::vector<float> res(n * n);
 
 #pragma omp parallel for
-  for (int row = 0; row < n; ++row) {
-    sequential_row(row, n, result.data());
+  for (std::size_t i = 0; i < n; i++) {
+    process_row(&matrix[i * n], n, &res[i * n]);
   }
 
-  return result;
-}
-
-void sequential_simd_row(const size_t &row, const size_t &n, float *result) {
-  float denominator = 0.0f;
-
-  size_t col = 0;
-
-  __m256 denom_vec = _mm256_setzero_ps();
-  for (; col + 8 <= n; col += 8) {
-    __m256 res_vec = _mm256_loadu_ps(&result[row * n + col]);
-    __m256 exp_vec = exp256_ps(res_vec);
-    _mm256_storeu_ps(&result[row * n + col], exp_vec);
-    denom_vec = _mm256_add_ps(denom_vec, exp_vec);
-  }
-  const __m128 sum_4 = _mm_add_ps(_mm256_extractf128_ps(denom_vec, 1),
-                                  _mm256_castps256_ps128(denom_vec));
-  const __m128 sum_2 = _mm_add_ps(sum_4, _mm_movehl_ps(sum_4, sum_4));
-  const __m128 sum_1 =
-      _mm_add_ss(sum_2, _mm_shuffle_ps(sum_2, sum_2, 0b01'01'01'01));
-  denominator = _mm_cvtss_f32(sum_1);
-  for (; col < n; ++col) {
-    result[row * n + col] = std::exp(result[row * n + col]);
-    denominator += result[row * n + col];
-  }
-  float inv_denominator = 1.0f / denominator;
-
-  col = 0;
-
-  const __m256 inv_denom_vec = _mm256_set1_ps(inv_denominator);
-  for (; col + 8 <= n; col += 8) {
-    __m256 res_vec = _mm256_loadu_ps(&result[row * n + col]);
-    res_vec = _mm256_mul_ps(res_vec, inv_denom_vec);
-    _mm256_storeu_ps(&result[row * n + col], res_vec);
-  }
-  for (; col < n; ++col) {
-    result[row * n + col] *= inv_denominator;
-  }
+  return res;
 }
 
 std::vector<float> run_simd(const std::vector<float> &matrix, std::size_t n) {
-  std::vector result = matrix;
+  std::vector<float> res(n * n);
 
-  for (size_t row = 0; row < n; ++row) {
-    sequential_simd_row(row, n, result.data());
+  for (std::size_t i = 0; i < n; i++) {
+    process_row_simd(&matrix[i * n], n, &res[i * n]);
   }
 
-  return result;
+  return res;
 }
 
 std::vector<float> run_openmp_simd(const std::vector<float> &matrix,
                                    std::size_t n) {
-  std::vector result = matrix;
+  std::vector<float> res(n * n);
 
 #pragma omp parallel for
-  for (int row = 0; row < n; ++row) {
-    sequential_simd_row(row, n, result.data());
+  for (std::size_t i = 0; i < n; i++) {
+    process_row_simd(&matrix[i * n], n, &res[i * n]);
   }
 
-  return result;
+  return res;
 }
 
 double measure_seconds(const std::function<std::vector<float>()> &work,
                        std::vector<float> &result_store) {
-  result_store = work();
-  result_store = work();
   const auto start = std::chrono::high_resolution_clock::now();
   result_store = work();
   const auto stop = std::chrono::high_resolution_clock::now();
@@ -184,7 +160,7 @@ std::string format_diff(float diff) {
   return oss.str();
 }
 
-void print_report(std::string_view testName, const RunResult &result) {
+void print_report(const std::string_view &testName, const RunResult &result) {
   if (result) {
     std::cout << testName << ": " << format_time(result.seconds)
               << " sec (diff: " << format_diff(result.diff) << ")\n";
@@ -195,7 +171,7 @@ void print_report(std::string_view testName, const RunResult &result) {
 
 RunResult run_test_case(const std::function<std::vector<float>()> &runner,
                         const std::vector<float> &baseline,
-                        std::string_view methodName) {
+                        const std::string_view &methodName) {
   RunResult result;
   try {
     result.seconds = measure_seconds(runner, result.result);
@@ -206,7 +182,49 @@ RunResult run_test_case(const std::function<std::vector<float>()> &runner,
   }
   return result;
 }
+}  // namespace
 
+int main(int argc, char *argv[]) {
+  try {
+    if (argc != 2) {
+      std::cerr << "Usage: " << argv[0] << " <matrix_size_n>\n";
+      return EXIT_FAILURE;
+    }
+
+    const std::size_t n = static_cast<std::size_t>(std::stoul(argv[1]));
+    if (n == 0) {
+      throw std::invalid_argument("Matrix size must be positive");
+    }
+
+    const auto input = make_matrix(n);
+
+    std::vector<float> sequential_result;
+    const double sequential_seconds = measure_seconds(
+        [&]() { return run_sequential(input, n); }, sequential_result);
+
+    auto omp_res = run_test_case([&] { return run_openmp(input, n); },
+                                 sequential_result, "OpenMP");
+    auto simd_res = run_test_case([&] { return run_simd(input, n); },
+                                  sequential_result, "SIMD");
+    auto omp_simd_res = run_test_case([&] { return run_openmp_simd(input, n); },
+                                      sequential_result, "OpenMP + SIMD");
+
+    std::cout << "Sequential: " << format_time(sequential_seconds) << " sec\n";
+    print_report("OpenMP", omp_res);
+    print_report("SIMD", simd_res);
+    print_report("OpenMP + SIMD", omp_simd_res);
+
+    return EXIT_SUCCESS;
+  } catch (const std::exception &ex) {
+    std::cerr << "Error: " << ex.what() << '\n';
+  } catch (...) {
+    std::cerr << "Unknown error\n";
+  }
+
+  return EXIT_FAILURE;
+}
+
+namespace {
 __m256 exp256_ps(__m256 x) {
   /* Modified code. The original code is here:
     https://github.com/reyoung/avx_mathfun
@@ -295,60 +313,4 @@ __m256 exp256_ps(__m256 x) {
   y = _mm256_mul_ps(y, pow2n);
   return y;
 }
-
-int main() {
-  int i;
-  float xv[8];
-  float yv[8];
-  __m256 x = _mm256_setr_ps(1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f);
-  __m256 y = exp256_ps(x);
-  _mm256_store_ps(xv, x);
-  _mm256_store_ps(yv, y);
-
-  for (i = 0; i < 8; i++) {
-    printf("i = %i, x = %e, y = %e \n", i, xv[i], yv[i]);
-  }
-  return 0;
-}
 }  // namespace
-
-int main(int argc, char *argv[]) {
-  try {
-    if (argc != 2) {
-      std::cerr << "Usage: " << argv[0] << " <matrix_size_n>\n";
-      return EXIT_FAILURE;
-    }
-
-    const std::size_t n = static_cast<std::size_t>(std::stoul(argv[1]));
-    if (n == 0) {
-      throw std::invalid_argument("Matrix size must be positive");
-    }
-
-    const auto input = make_matrix(n);
-
-    std::vector<float> sequential_result;
-    const double sequential_seconds = measure_seconds(
-        [&]() { return run_sequential(input, n); }, sequential_result);
-
-    auto omp_res = run_test_case([&] { return run_openmp(input, n); },
-                                 sequential_result, "OpenMP");
-    auto simd_res = run_test_case([&] { return run_simd(input, n); },
-                                  sequential_result, "SIMD");
-    auto omp_simd_res = run_test_case([&] { return run_openmp_simd(input, n); },
-                                      sequential_result, "OpenMP + SIMD");
-
-    std::cout << "Sequential: " << format_time(sequential_seconds) << "sec\n";
-
-    print_report("OpenMP", omp_res);
-    print_report("SIMD", simd_res);
-    print_report("OpenMP + SIMD", omp_simd_res);
-
-    return EXIT_SUCCESS;
-  } catch (const std::exception &ex) {
-    std::cerr << "Error: " << ex.what() << '\n';
-  } catch (...) {
-    std::cerr << "Unknown error\n";
-  }
-
-  return EXIT_FAILURE;
-}
