@@ -176,7 +176,7 @@ void calculate_row_simd(const float *address_input, float *address_output,
   for (; idx_j + 8 <= n; idx_j += 8) {
     __m256 vec_of_8_elems = _mm256_loadu_ps(&address_input[idx_j]);
     __m256 vec_of_8_exps = exp256_ps(vec_of_8_elems);
-    _mm256_store_ps(&address_output[idx_j], vec_of_8_exps);
+    _mm256_storeu_ps(&address_output[idx_j], vec_of_8_exps);
     current_sum += calc_sum_of_exp_vec(vec_of_8_exps);
   }
   for (; idx_j < n; ++idx_j) {
@@ -189,10 +189,10 @@ void calculate_row_simd(const float *address_input, float *address_output,
   current_sum = 1.0 / current_sum;
 
   for (; idx_j + 8 <= n; idx_j += 8) {
-    __m256 vec_of_8_elems = _mm256_load_ps(&address_output[idx_j]);
+    __m256 vec_of_8_elems = _mm256_loadu_ps(&address_output[idx_j]);
     __m256 vec_of_8_sums = _mm256_set1_ps(current_sum);
     __m256 vec_of_8_results = _mm256_mul_ps(vec_of_8_elems, vec_of_8_sums);
-    _mm256_store_ps(&address_output[idx_j], vec_of_8_results);
+    _mm256_storeu_ps(&address_output[idx_j], vec_of_8_results);
   }
 
   for (; idx_j < n; ++idx_j) {
@@ -284,10 +284,12 @@ std::string format_diff(float diff) {
   return oss.str();
 }
 
-void print_report(std::string_view testName, const RunResult &result) {
+void print_report(std::string_view testName, const RunResult &result, const std::size_t n) {
   if (result) {
-    std::cout << testName << ": " << format_time(result.seconds)
-              << " sec (diff: " << format_diff(result.diff) << ")\n";
+    std::cout << testName << ": " << format_time(result.seconds) << " sec ("
+              << n * n * 4.0 * 2.0 / (1024.0 * 1024.0 * 1024.0 * result.seconds)
+              << " GB/s) "
+              << "(diff: " << format_diff(result.diff) << ")\n";
   } else {
     std::cout << testName << ": n/a (diff: n/a)\n";
   }
@@ -337,10 +339,13 @@ int main(int argc, char *argv[]) {
     auto omp_simd_res = run_test_case([&] { return run_openmp_simd(input, n); },
                                       sequential_result, "OpenMP + SIMD");
 
-    std::cout << "Sequential: " << format_time(sequential_seconds) << " sec\n";
-    print_report("OpenMP", omp_res);
-    print_report("SIMD", simd_res);
-    print_report("OpenMP + SIMD", omp_simd_res);
+    std::cout << "Sequential: " << format_time(sequential_seconds) << " sec ("
+              << n * n * 4.0 * 2.0 /
+                     (1024.0 * 1024.0 * 1024.0 * sequential_seconds)
+              << " GB/s)\n";
+    print_report("OpenMP", omp_res, n);
+    print_report("SIMD", simd_res, n);
+    print_report("OpenMP + SIMD", omp_simd_res, n);
 
     return EXIT_SUCCESS;
   } catch (const std::exception &ex) {
