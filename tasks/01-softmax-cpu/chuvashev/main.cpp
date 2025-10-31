@@ -187,7 +187,7 @@ void calculate_row_simd(const float *address_input, float *address_output,
   }
 
   idx_j = 0;
-  current_sum = 1.0 / current_sum;
+  current_sum = 1.0f / current_sum;
 
   for (; idx_j + 8 <= n; idx_j += 8) {
     __m256 vec_of_8_elems = _mm256_loadu_ps(&address_output[idx_j]);
