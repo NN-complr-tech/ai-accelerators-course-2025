@@ -8,18 +8,17 @@
 #include <functional>
 #include <iomanip>
 #include <iostream>
+#include <random>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
-#include <random>
-
 
 namespace {
 
 std::vector<float> make_matrix(std::size_t n) {
-  std::vector<float> matrix(n*n);
+  std::vector<float> matrix(n * n);
 
   static std::random_device ran_dev;
   static std::mt19937 ran_eng(ran_dev());
@@ -30,38 +29,34 @@ std::vector<float> make_matrix(std::size_t n) {
   return matrix;
 }
 
-static void row_calculation_amount(const float* input_row, 
-                                    std::size_t n,
-                                    float* output_row)
-{
-    float row_sum = 0.0f;
-    for (std::size_t item = 0; item < n; item++) { row_sum += exp(input_row[item]); }
-    const float divider = 1 / row_sum;
-    for (std::size_t item = 0; item < n; item++) { output_row[item] = exp(input_row[item]) / row_sum; }
+static void row_calculation_amount(const float* input_row, std::size_t n,
+                                   float* output_row) {
+  float row_sum = 0.0f;
+  for (std::size_t item = 0; item < n; item++) {
+    row_sum += exp(input_row[item]);
+  }
+  const float divider = 1 / row_sum;
+  for (std::size_t item = 0; item < n; item++) {
+    output_row[item] = exp(input_row[item]) / row_sum;
+  }
 }
 
-
-std::vector<float> run_sequential(const std::vector<float> &matrix,
+std::vector<float> run_sequential(const std::vector<float>& matrix,
                                   std::size_t n) {
-  //throw std::runtime_error("Sequential method not implemented");
+  std::vector<float> res_matrix(n * n);
 
-  std::vector<float> res_matrix(n*n);
-  
-  for (std::size_t row = 0; row < n; row++)
-  {
-    row_calculation_amount(&matrix[row*n], n, &res_matrix[row*n]);
+  for (std::size_t row = 0; row < n; row++) {
+    row_calculation_amount(&matrix[row * n], n, &res_matrix[row * n]);
   }
   return res_matrix;
 }
 
-std::vector<float> run_openmp(const std::vector<float> &matrix, std::size_t n) {
-  //throw std::runtime_error("OpenMP method not implemented");
-  std::vector<float> res_matrix(n*n);
+std::vector<float> run_openmp(const std::vector<float>& matrix, std::size_t n) {
+  std::vector<float> res_matrix(n * n);
 
-  #pragma omp parallel for
-  for (int row = 0; row < n; row++)
-  {
-    row_calculation_amount(&matrix[row*n], n, &res_matrix[row*n]);
+#pragma omp parallel for
+  for (int row = 0; row < n; row++) {
+    row_calculation_amount(&matrix[row * n], n, &res_matrix[row * n]);
   }
   return res_matrix;
 }
@@ -70,90 +65,79 @@ static std::size_t AVX_FLOAT_COUNT = 8;
 
 __m256 exp256_ps(__m256 x);
 
-static void row_calculation_amount_simd(const float* input_row, 
-                                    std::size_t n,
-                                    float* output_row)
-{
-    __m256 sum8 = _mm256_setzero_ps();
-    std::size_t item_counter = 0;
+static void row_calculation_amount_simd(const float* input_row, std::size_t n,
+                                        float* output_row) {
+  __m256 sum8 = _mm256_setzero_ps();
+  std::size_t item_counter = 0;
 
-    for (; item_counter + AVX_FLOAT_COUNT <= n; item_counter += AVX_FLOAT_COUNT)
-    {
-      __m256 items = _mm256_loadu_ps(&input_row[item_counter]);
-      items = exp256_ps(items);
-      sum8 = _mm256_add_ps(sum8, items);
-      _mm256_storeu_ps(&output_row[item_counter], items);
-    }
-    
-    float temp_sum[8];
-    _mm256_store_ps(temp_sum, sum8);
-    
-    float sum = 0.0f;
-    for (int i = 0; i < AVX_FLOAT_COUNT; i++) {
-        sum += temp_sum[i];
-    }
+  for (; item_counter + AVX_FLOAT_COUNT <= n; item_counter += AVX_FLOAT_COUNT) {
+    __m256 items = _mm256_loadu_ps(&input_row[item_counter]);
+    items = exp256_ps(items);
+    sum8 = _mm256_add_ps(sum8, items);
+    _mm256_storeu_ps(&output_row[item_counter], items);
+  }
 
-    float tail_sum = 0.0f;
-    for(; item_counter < n; item_counter++)
-    {
-      float exp_val = exp(input_row[item_counter]);
-      output_row[item_counter] = exp_val;
-      tail_sum += exp_val;
-    }
+  alignas(32) float temp_sum[8];
+  _mm256_store_ps(temp_sum, sum8);
 
-    float total_sum = sum + tail_sum;
-    const float divider = 1.0f / total_sum;
-    const __m256 divider_vec = _mm256_set1_ps(divider);
-    
-    item_counter = 0;
-    for (; item_counter + AVX_FLOAT_COUNT <= n; item_counter += AVX_FLOAT_COUNT)
-    {
-      __m256 items = _mm256_loadu_ps(&output_row[item_counter]);
-      items = _mm256_mul_ps(items, divider_vec);
-      _mm256_storeu_ps(&output_row[item_counter], items);
-    }
-    
-    for(; item_counter < n; item_counter++)
-    {
-      output_row[item_counter] *= divider;
-    }
+  float sum = 0.0f;
+  for (int i = 0; i < AVX_FLOAT_COUNT; i++) {
+    sum += temp_sum[i];
+  }
+
+  float tail_sum = 0.0f;
+  for (; item_counter < n; item_counter++) {
+    float exp_val = exp(input_row[item_counter]);
+    output_row[item_counter] = exp_val;
+    tail_sum += exp_val;
+  }
+
+  float total_sum = sum + tail_sum;
+  const float divider = 1.0f / total_sum;
+  const __m256 divider_vec = _mm256_set1_ps(divider);
+
+  item_counter = 0;
+  for (; item_counter + AVX_FLOAT_COUNT <= n; item_counter += AVX_FLOAT_COUNT) {
+    __m256 items = _mm256_loadu_ps(&output_row[item_counter]);
+    items = _mm256_mul_ps(items, divider_vec);
+    _mm256_storeu_ps(&output_row[item_counter], items);
+  }
+
+  for (; item_counter < n; item_counter++) {
+    output_row[item_counter] *= divider;
+  }
 }
 
-std::vector<float> run_simd(const std::vector<float> &matrix, std::size_t n) {
-  //throw std::runtime_error("SIMD method not implemented");
-  std::vector<float> res_matrix(n*n);
+std::vector<float> run_simd(const std::vector<float>& matrix, std::size_t n) {
+  std::vector<float> res_matrix(n * n);
 
-  for (std::size_t row = 0; row < n; row++)
-  {
-    row_calculation_amount_simd(&matrix[row*n], n, &res_matrix[row*n]);
+  for (std::size_t row = 0; row < n; row++) {
+    row_calculation_amount_simd(&matrix[row * n], n, &res_matrix[row * n]);
   }
   return res_matrix;
 }
 
-std::vector<float> run_openmp_simd(const std::vector<float> &matrix,
+std::vector<float> run_openmp_simd(const std::vector<float>& matrix,
                                    std::size_t n) {
-  //throw std::runtime_error("OpenMP + SIMD method not implemented");
-  std::vector<float> res_matrix(n*n);
+  std::vector<float> res_matrix(n * n);
 
-  #pragma omp parallel for
-  for (int row = 0; row < n; row++)
-  {
-    row_calculation_amount_simd(&matrix[row*n], n, &res_matrix[row*n]);
+#pragma omp parallel for
+  for (int row = 0; row < n; row++) {
+    row_calculation_amount_simd(&matrix[row * n], n, &res_matrix[row * n]);
   }
   return res_matrix;
-
 }
 
-double measure_seconds(const std::function<std::vector<float>()> &work,
-                       std::vector<float> &result_store) {
+double measure_seconds(const std::function<std::vector<float>()>& work,
+                       std::vector<float>& result_store) {
   const auto start = std::chrono::high_resolution_clock::now();
   result_store = work();
   const auto stop = std::chrono::high_resolution_clock::now();
   return std::chrono::duration<double>(stop - start).count();
 }
 
-float max_abs_diff(const std::vector<float> &baseline,
-                   const std::vector<float> &candidate) {
+float max_abs_diff(const std::vector<float>& baseline,
+                   const std::vector<float>& candidate) {
   if (baseline.size() != candidate.size()) {
     throw std::runtime_error(
         "Result size mismatch while validating correctness");
@@ -165,7 +149,6 @@ float max_abs_diff(const std::vector<float> &baseline,
   return max_diff;
 }
 
-// TODO: Create basic utils file
 struct RunResult {
   std::vector<float> result;
   double seconds = 0.0;
@@ -186,7 +169,7 @@ std::string format_diff(float diff) {
   return oss.str();
 }
 
-void print_report(std::string_view testName, const RunResult &result) {
+void print_report(std::string_view testName, const RunResult& result) {
   if (result) {
     std::cout << testName << ": " << format_time(result.seconds)
               << " sec (diff: " << format_diff(result.diff) << ")\n";
@@ -195,22 +178,22 @@ void print_report(std::string_view testName, const RunResult &result) {
   }
 }
 
-RunResult run_test_case(const std::function<std::vector<float>()> &runner,
-                        const std::vector<float> &baseline,
+RunResult run_test_case(const std::function<std::vector<float>()>& runner,
+                        const std::vector<float>& baseline,
                         std::string_view methodName) {
   RunResult result;
   try {
     result.seconds = measure_seconds(runner, result.result);
     result.diff = max_abs_diff(baseline, result.result);
     result.success = true;
-  } catch (const std::exception &ex) {
+  } catch (const std::exception& ex) {
     std::cerr << methodName << " method failed: " << ex.what() << '\n';
   }
   return result;
 }
 }  // namespace
 
-int main(int argc, char *argv[]) {
+int main(int argc, char* argv[]) {
   try {
     if (argc != 2) {
       std::cerr << "Usage: " << argv[0] << " <matrix_size_n>\n";
@@ -241,7 +224,7 @@ int main(int argc, char *argv[]) {
     print_report("OpenMP + SIMD", omp_simd_res);
 
     return EXIT_SUCCESS;
-  } catch (const std::exception &ex) {
+  } catch (const std::exception& ex) {
     std::cerr << "Error: " << ex.what() << '\n';
   } catch (...) {
     std::cerr << "Unknown error\n";
@@ -252,47 +235,14 @@ int main(int argc, char *argv[]) {
 
 namespace {
 
+// AVX1-совместимая реализация экспоненты
 __m256 exp256_ps(__m256 x) {
-  //  https://stackoverflow.com/questions/48863719
-  /* Modified code from this source: https://github.com/reyoung/avx_mathfun
-
-   AVX implementation of exp
-   Based on "sse_mathfun.h", by Julien Pommier
-   http://gruntthepeon.free.fr/ssemath/
-   Copyright (C) 2012 Giovanni Garberoglio
-   Interdisciplinary Laboratory for Computational Science (LISC)
-   Fondazione Bruno Kessler and University of Trento
-   via Sommarive, 18
-   I-38123 Trento (Italy)
-  This software is provided 'as-is', without any express or implied
-  warranty.  In no event will the authors be held liable for any damages
-  arising from the use of this software.
-  Permission is granted to anyone to use this software for any purpose,
-  including commercial applications, and to alter it and redistribute it
-  freely, subject to the following restrictions:
-  1. The origin of this software must not be misrepresented; you must not
-     claim that you wrote the original software. If you use this software
-     in a product, an acknowledgment in the product documentation would be
-     appreciated but is not required.
-  2. Altered source versions must be plainly marked as such, and must not be
-     misrepresented as being the original software.
-  3. This notice may not be removed or altered from any source distribution.
-  (this is the zlib license)
-
-  */
-  /*
-    To increase the compatibility across different compilers the original code
-    is converted to plain AVX2 intrinsics code without ingenious macro's, gcc
-    style alignment attributes etc. Moreover, the part
-    "express exp(x) as exp(g+ n*log(2))" has been significantly simplified.
-    This modified code is not thoroughly tested!
-  */
-
   __m256 exp_hi = _mm256_set1_ps(88.3762626647949f);
   __m256 exp_lo = _mm256_set1_ps(-88.3762626647949f);
 
   __m256 cephes_LOG2EF = _mm256_set1_ps(1.44269504088896341f);
-  __m256 inv_LOG2EF = _mm256_set1_ps(0.693147180559945f);
+  __m256 cephes_exp_C1 = _mm256_set1_ps(0.693359375f);
+  __m256 cephes_exp_C2 = _mm256_set1_ps(-2.12194440e-4f);
 
   __m256 cephes_exp_p0 = _mm256_set1_ps(1.9875691500E-4);
   __m256 cephes_exp_p1 = _mm256_set1_ps(1.3981999507E-3);
@@ -300,18 +250,25 @@ __m256 exp256_ps(__m256 x) {
   __m256 cephes_exp_p3 = _mm256_set1_ps(4.1665795894E-2);
   __m256 cephes_exp_p4 = _mm256_set1_ps(1.6666665459E-1);
   __m256 cephes_exp_p5 = _mm256_set1_ps(5.0000001201E-1);
-  __m256 fx;
-  __m256i imm0;
+
   __m256 one = _mm256_set1_ps(1.0f);
+  __m256 half = _mm256_set1_ps(0.5f);
 
   x = _mm256_min_ps(x, exp_hi);
   x = _mm256_max_ps(x, exp_lo);
 
-  /* express exp(x) as exp(g + n*log(2)) */
-  fx = _mm256_mul_ps(x, cephes_LOG2EF);
-  fx = _mm256_round_ps(fx, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
-  __m256 z = _mm256_mul_ps(fx, inv_LOG2EF);
+  __m256 fx = _mm256_mul_ps(x, cephes_LOG2EF);
+  fx = _mm256_add_ps(fx, half);
+
+  __m128i fx_low = _mm_cvtps_epi32(_mm256_extractf128_ps(fx, 0));
+  __m128i fx_high = _mm_cvtps_epi32(_mm256_extractf128_ps(fx, 1));
+  fx = _mm256_set_m128(_mm_cvtepi32_ps(fx_high), _mm_cvtepi32_ps(fx_low));
+
+  __m256 tmp = _mm256_mul_ps(fx, cephes_exp_C1);
+  __m256 z = _mm256_mul_ps(fx, cephes_exp_C2);
+  x = _mm256_sub_ps(x, tmp);
   x = _mm256_sub_ps(x, z);
+
   z = _mm256_mul_ps(x, x);
 
   __m256 y = cephes_exp_p0;
@@ -329,11 +286,18 @@ __m256 exp256_ps(__m256 x) {
   y = _mm256_add_ps(y, x);
   y = _mm256_add_ps(y, one);
 
-  /* build 2^n */
-  imm0 = _mm256_cvttps_epi32(fx);
-  imm0 = _mm256_add_epi32(imm0, _mm256_set1_epi32(0x7f));
-  imm0 = _mm256_slli_epi32(imm0, 23);
-  __m256 pow2n = _mm256_castsi256_ps(imm0);
+  __m128i imm0_low = _mm_cvtps_epi32(_mm256_extractf128_ps(fx, 0));
+  __m128i imm0_high = _mm_cvtps_epi32(_mm256_extractf128_ps(fx, 1));
+
+  imm0_low = _mm_add_epi32(imm0_low, _mm_set1_epi32(0x7f));
+  imm0_high = _mm_add_epi32(imm0_high, _mm_set1_epi32(0x7f));
+
+  imm0_low = _mm_slli_epi32(imm0_low, 23);
+  imm0_high = _mm_slli_epi32(imm0_high, 23);
+
+  __m256 pow2n =
+      _mm256_set_m128(_mm_castsi128_ps(imm0_high), _mm_castsi128_ps(imm0_low));
+
   y = _mm256_mul_ps(y, pow2n);
   return y;
 }
