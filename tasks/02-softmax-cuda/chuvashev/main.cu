@@ -18,38 +18,6 @@
 #include <string_view>
 #include <vector>
 
-struct timer {
-  timer() = delete;
-  timer(const char *msg, bool q = true);
-
-  ~timer();
-
-  void reset();
-  double elapsed();
-
-  std::chrono::high_resolution_clock::time_point tStart;
-  std::string message;
-  bool quiet;
-};
-
-timer::timer(const char *msg, bool q) : message(msg), quiet(q) {
-  tStart = std::chrono::high_resolution_clock::now();
-}
-
-double timer::elapsed() {
-  return std::chrono::duration_cast<std::chrono::duration<double>>(
-             std::chrono::high_resolution_clock::now() - tStart)
-      .count();
-}
-
-void timer::reset() { tStart = std::chrono::high_resolution_clock::now(); }
-
-timer::~timer() {
-  if (!message.empty()) {
-    if (!quiet) std::cout << message << ' ' << elapsed() << " s\n";
-  }
-}
-
 // TODO: Move to utils
 #define CHECK_CUDA_ERROR(callable)                                        \
   {                                                                       \
@@ -63,6 +31,22 @@ timer::~timer() {
     }                                                                     \
   }
 
+#define THREADS_PER_BLOCK 1024
+
+struct timer {
+  std::chrono::high_resolution_clock::time_point t_start;
+
+  timer() { t_start = std::chrono::high_resolution_clock::now(); }
+  ~timer() {}
+
+  void reset() { t_start = std::chrono::high_resolution_clock::now(); }
+  double elapsed() {
+    return std::chrono::duration_cast<std::chrono::duration<double>>(
+               std::chrono::high_resolution_clock::now() - t_start)
+        .count();
+  }
+};
+
 namespace {
 void make_matrix(std::size_t n, std::vector<float> &matrix) {
   // throw std::runtime_error("make_matrix not implemented");
@@ -71,7 +55,6 @@ void make_matrix(std::size_t n, std::vector<float> &matrix) {
   std::mt19937 gen(rd());
   std::size_t size = n * n;
 #pragma omp parallel for num_threads(12)
-  std::cout << omp_get_thread_num() << std::endl;
   for (std::size_t idx = 0; idx < size; ++idx) {
     matrix[idx] = dist(gen);
   }
@@ -104,54 +87,41 @@ void run_sequential(const std::vector<float> &input, std::vector<float> &output,
   }
 }
 
-__global__ void warmup_kernel(const float *d_input, float *d_output,
-                              const std::size_t n) {
+__global__ void warmup_kernel(float *d_matrix, const std::size_t n) {
   std::size_t row = blockIdx.y;
   std::size_t col = blockIdx.x * blockDim.x + threadIdx.x;
-
   if (row < n && col < n) {
     std::size_t index_of_start_elem = row * n + col;
-
-    d_output[index_of_start_elem] = d_input[index_of_start_elem];
+    d_matrix[index_of_start_elem] *= d_matrix[index_of_start_elem];
   }
 }
 
 void warmup_cuda(const std::vector<float> &matrix, std::size_t n) {
   // throw std::runtime_error("CUDA warm-up not implemented");
-
-  cudaSetDevice(0);
-
+  CHECK_CUDA_ERROR(cudaSetDevice(0));
   std::size_t byte_size_memory = n * n * sizeof(float);
-  float *d_input, *d_output, *d_sum_of_row;
-
-  cudaMalloc(&d_input, byte_size_memory);
-  cudaMalloc(&d_output, byte_size_memory);
-  cudaMalloc(&d_sum_of_row, n * sizeof(float));
-  cudaMemcpy(d_input, matrix.data(), byte_size_memory, cudaMemcpyHostToDevice);
-
-  dim3 threds_per_block(512);
+  float *d_matrix;
+  CHECK_CUDA_ERROR(cudaMalloc(&d_matrix, byte_size_memory));
+  CHECK_CUDA_ERROR(cudaMemcpy(d_matrix, matrix.data(), byte_size_memory,
+                              cudaMemcpyHostToDevice));
+  dim3 threds_per_block(THREADS_PER_BLOCK);
   dim3 blocks((n + (threds_per_block.x - 1)) / threds_per_block.x, n);
-  warmup_kernel<<<blocks, threds_per_block>>>(d_input, d_output, n);
-
-  cudaFree(d_input);
-  cudaFree(d_output);
-  cudaFree(d_sum_of_row);
+  warmup_kernel<<<blocks, threds_per_block>>>(d_matrix, n);
+  CHECK_CUDA_ERROR(cudaDeviceSynchronize());
+  CHECK_CUDA_ERROR(cudaFree(d_matrix));
 }
 
-__global__ void softmax_exp_sum_kernel(float *d_matrix, float *d_sum_of_row,
-                                       size_t n) {
+__global__ void softmax_kernel(float *d_matrix, size_t n) {
   size_t row = blockIdx.x;
 
-  __shared__ float smem[512];
+  __shared__ float smem[THREADS_PER_BLOCK];
   smem[threadIdx.x] = 0.0f;
   __syncthreads();
 
   if (row < n) {
     for (std::size_t col = threadIdx.x; col < n; col += blockDim.x) {
       size_t index = row * n + col;
-      float value = expf(d_matrix[index]);
-      d_matrix[index] = value;
-      smem[threadIdx.x] += value;
+      smem[threadIdx.x] += expf(d_matrix[index]);
     }
   }
 
@@ -159,72 +129,52 @@ __global__ void softmax_exp_sum_kernel(float *d_matrix, float *d_sum_of_row,
 
   if (threadIdx.x == 0) {
     float local_sum = 0.0f;
-    for (std::size_t idx = 0; idx < 512; ++idx) {
+    for (std::size_t idx = 0; idx < THREADS_PER_BLOCK; ++idx) {
       local_sum += smem[idx];
     }
-    d_sum_of_row[row] = local_sum;
+    smem[0] = local_sum;
   }
-}
 
-__global__ void softmax_divide_kernel(float *d_matrix,
-                                      const float *d_sum_of_row, size_t n) {
-  size_t row = blockIdx.x;
+  __syncthreads();
 
   if (row < n) {
     for (std::size_t col = threadIdx.x; col < n; col += blockDim.x) {
       size_t index = row * n + col;
-      d_matrix[index] /= d_sum_of_row[row];
+      d_matrix[index] = expf(d_matrix[index]) / smem[0];
     }
   }
 }
 
-void launch_softmax_kernel(float *d_matrix, float *d_sum_of_row, size_t n) {
-  dim3 threads_per_block(512);
+void launch_softmax_kernel(float *d_matrix, size_t n) {
+  dim3 threads_per_block(THREADS_PER_BLOCK);
   dim3 blocks(n);
 
-  timer first("");
-  softmax_exp_sum_kernel<<<blocks, threads_per_block>>>(d_matrix, d_sum_of_row,
-                                                        n);
-  cudaDeviceSynchronize();
-  double first_end = first.elapsed();
-  std::cout << "first time: " << first_end << "\t GB/s = "
-            << n * n * 4.0 * 2.0 / (1024.0 * 1024.0 * 1024.0 * first_end)
-            << std::endl;
-
-  timer second("");
-  softmax_divide_kernel<<<blocks, threads_per_block>>>(d_matrix, d_sum_of_row,
-                                                       n);
-  cudaDeviceSynchronize();
-  double secod_end = second.elapsed();
-  std::cout << "second time: " << secod_end << "\t GB/s = "
-            << n * n * 4.0 * 2.0 / (1024.0 * 1024.0 * 1024.0 * secod_end)
+  timer timer;
+  softmax_kernel<<<blocks, threads_per_block>>>(d_matrix, n);
+  CHECK_CUDA_ERROR(cudaDeviceSynchronize());
+  double time = timer.elapsed();
+  std::cout << "CUDA: " << time << "\tGB/s: "
+            << n * n * sizeof(float) * 3.0f /
+                   (1024.0 * 1024.0f * 1024.0f * time)
             << std::endl;
 }
 
 void run_cuda_simt(const std::vector<float> &input, std::vector<float> &output,
                    std::size_t n) {
-  cudaSetDevice(0);
+  CHECK_CUDA_ERROR(cudaSetDevice(0));
 
   size_t byte_size = n * n * sizeof(float);
-
   float *d_matrix;
-  float *d_sum_of_row;
 
-  cudaMalloc(&d_matrix, byte_size);
-  cudaMalloc(&d_sum_of_row, n * sizeof(float));
+  CHECK_CUDA_ERROR(cudaMalloc(&d_matrix, byte_size));
+  CHECK_CUDA_ERROR(
+      cudaMemcpy(d_matrix, input.data(), byte_size, cudaMemcpyHostToDevice));
 
-  cudaMemset(d_sum_of_row, 0, n * sizeof(float));
+  launch_softmax_kernel(d_matrix, n);
 
-  cudaMemcpy(d_matrix, input.data(), byte_size, cudaMemcpyHostToDevice);
-
-  timer time("");
-  launch_softmax_kernel(d_matrix, d_sum_of_row, n);
-  std::cout << "timer: " << time.elapsed() << std::endl;
-
-  cudaMemcpy(output.data(), d_matrix, byte_size, cudaMemcpyDeviceToHost);
-
-  cudaFree(d_matrix);
-  cudaFree(d_sum_of_row);
+  CHECK_CUDA_ERROR(
+      cudaMemcpy(output.data(), d_matrix, byte_size, cudaMemcpyDeviceToHost));
+  CHECK_CUDA_ERROR(cudaFree(d_matrix));
 }
 
 double measure_seconds(const std::function<void()> &work) {
@@ -280,7 +230,7 @@ void print_report(std::string_view testName, const RunResult &result) {
 
 int main(int argc, char *argv[]) {
   try {
-    /*if (argc != 2) {
+    if (argc != 2) {
       std::cerr << "Usage: " << argv[0] << " <matrix_size_n>\n";
       return EXIT_FAILURE;
     }
@@ -288,9 +238,7 @@ int main(int argc, char *argv[]) {
     const std::size_t n = static_cast<std::size_t>(std::stoul(argv[1]));
     if (n == 0) {
       throw std::invalid_argument("Matrix size must be positive");
-    }*/
-
-    std::size_t n = 20000;
+    }
 
     std::vector<float> input(n * n, 0);
     make_matrix(n, input);
