@@ -138,34 +138,49 @@ void warmup_cuda(const std::vector<float> &matrix, std::size_t n) {
   cudaFree(d_sum_of_row);
 }
 
-__global__ void softmax_exp_sum_kernel(float *d_matrix,
-                                       float *d_sum_of_row, size_t n) {
-  size_t row = blockIdx.y;
-  size_t col = blockIdx.x * blockDim.x + threadIdx.x;
+__global__ void softmax_exp_sum_kernel(float *d_matrix, float *d_sum_of_row,
+                                       size_t n) {
+  size_t row = blockIdx.x;
 
-  if (row < n && col < n) {
-    size_t index = row * n + col;
-    float val = expf(d_matrix[index]);
-    d_matrix[index] = val;
-    atomicAdd(&d_sum_of_row[row], val);
+  __shared__ float smem[512];
+  smem[threadIdx.x] = 0.0f;
+  __syncthreads();
+
+  if (row < n) {
+    for (std::size_t col = threadIdx.x; col < n; col += blockDim.x) {
+      size_t index = row * n + col;
+      float value = expf(d_matrix[index]);
+      d_matrix[index] = value;
+      smem[threadIdx.x] += value;
+    }
+  }
+
+  __syncthreads();
+
+  if (threadIdx.x == 0) {
+    float local_sum = 0.0f;
+    for (std::size_t idx = 0; idx < 512; ++idx) {
+      local_sum += smem[idx];
+    }
+    d_sum_of_row[row] = local_sum;
   }
 }
 
 __global__ void softmax_divide_kernel(float *d_matrix,
                                       const float *d_sum_of_row, size_t n) {
-  size_t row = blockIdx.y;
-  size_t col = blockIdx.x * blockDim.x + threadIdx.x;
+  size_t row = blockIdx.x;
 
-  if (row < n && col < n) {
-    size_t index = row * n + col;
-    d_matrix[index] /= d_sum_of_row[row];
+  if (row < n) {
+    for (std::size_t col = threadIdx.x; col < n; col += blockDim.x) {
+      size_t index = row * n + col;
+      d_matrix[index] /= d_sum_of_row[row];
+    }
   }
 }
 
-void launch_softmax_kernel(float *d_matrix, float *d_sum_of_row,
-                           size_t n) {
+void launch_softmax_kernel(float *d_matrix, float *d_sum_of_row, size_t n) {
   dim3 threads_per_block(512);
-  dim3 blocks((n + threads_per_block.x - 1) / threads_per_block.x, n);
+  dim3 blocks(n);
 
   timer first("");
   softmax_exp_sum_kernel<<<blocks, threads_per_block>>>(d_matrix, d_sum_of_row,
