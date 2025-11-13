@@ -23,6 +23,14 @@ source_group("Header Files" FILES
     include/simd_utils.h
 )
 
+include(CheckCXXCompilerFlag)
+check_cxx_compiler_flag("-mavx2" COMPILER_SUPPORTS_AVX2)
+if(COMPILER_SUPPORTS_AVX2)
+    target_compile_options(${target_name} PRIVATE -mavx2)
+else()
+    message(WARNING "AVX2 not supported, performance may be degraded")
+endif()
+
 target_include_directories(${target_name} PRIVATE include/)
 
 find_package(OpenMP REQUIRED)
