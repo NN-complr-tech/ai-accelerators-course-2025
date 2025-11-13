@@ -1,5 +1,5 @@
 nvcc ^
-	src/kernel.cu src/main.cpp src/utils.cpp ^
+	src/kernel.cu src/main.cpp src/utils.cpp src/simd_utils.cpp ^
 	-o output.exe ^
 	-ccbin "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64" ^
 	--machine 64 ^

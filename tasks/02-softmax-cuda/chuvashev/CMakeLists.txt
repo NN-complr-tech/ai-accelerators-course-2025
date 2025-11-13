@@ -7,16 +7,20 @@ add_executable(${target_name}
     src/kernel.cu 
     src/main.cpp
     src/utils.cpp
+    src/simd_utils.cpp
     include/utils.h
+    include/simd_utils.h
 )
 
 source_group("Source Files" FILES 
     src/kernel.cu 
     src/main.cpp
     src/utils.cpp
+    src/simd_utils.cpp
 )
 source_group("Header Files" FILES 
     include/utils.h
+    include/simd_utils.h
 )
 
 target_include_directories(${target_name} PRIVATE include/)
