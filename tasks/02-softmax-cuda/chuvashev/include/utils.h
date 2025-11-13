@@ -35,7 +35,6 @@
   }
 #endif
 
-
 struct timer {
   std::chrono::high_resolution_clock::time_point t_start;
   timer();
