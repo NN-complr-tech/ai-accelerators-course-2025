@@ -24,21 +24,21 @@ int main(int argc, char *argv[]) {
     std::cout << "Sequential: " << format_time(sequential_seconds) << " sec\n";
 
     {
-        RunResult simt_res;
-        simt_res.result.resize(n * n, 0);
-        try {
-          warmup_cuda(input, n);
-          simt_res.seconds = measure_seconds(
-              [&]() { return run_cuda_simt(input, simt_res.result, n); });
-          simt_res.diff = max_abs_diff(sequential_result, simt_res.result);
-          simt_res.success = true;
-          // print_matrix(n, simt_res.result);
-          // TODO: Compare simt_seconds with the OpenMP+AVX2 timing from practice
-          // #1.
-        } catch (const std::exception &ex) {
-          std::cerr << "CUDA SIMT method failed: " << ex.what() << '\n';
-        }
-        print_report("SIMT", simt_res);
+      RunResult simt_res;
+      simt_res.result.resize(n * n, 0);
+      try {
+        warmup_cuda(input, n);
+        simt_res.seconds = measure_seconds(
+            [&]() { return run_cuda_simt(input, simt_res.result, n); });
+        simt_res.diff = max_abs_diff(sequential_result, simt_res.result);
+        simt_res.success = true;
+        // print_matrix(n, simt_res.result);
+        // TODO: Compare simt_seconds with the OpenMP+AVX2 timing from practice
+        // #1.
+      } catch (const std::exception &ex) {
+        std::cerr << "CUDA SIMT method failed: " << ex.what() << '\n';
+      }
+      print_report("SIMT", simt_res);
     }
 
     {
