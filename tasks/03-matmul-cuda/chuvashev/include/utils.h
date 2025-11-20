@@ -76,13 +76,15 @@ __global__ void GPU_MATMUL_V2(const __half *input, float *output,
 void run_matrix_mult_gpu_ver_2(const std::vector<__half> &input,
                                std::vector<float> &output, const std::size_t n);
 
-void warmup_wmma(const std::vector<__half> &matrix, std::size_t n);
+void warmup_wmma(const std::vector<__half> &input, std::vector<float> &output,
+                 const std::size_t n);
 __global__ void WMMA_kernel(const __half *input, float *output,
                             const std::size_t n);
 void run_wmma(const std::vector<__half> &input, std::vector<float> &output,
               const std::size_t n);
 
-void warmup_cutlass(const std::vector<__half> &matrix, std::size_t n);
+void warmup_cutlass(const std::vector<__half> &input,
+                    std::vector<float> &output, const std::size_t n);
 void run_cutlass(const std::vector<__half> &input, std::vector<float> &output,
                  std::size_t n);
 

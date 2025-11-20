@@ -45,26 +45,29 @@ void run_matrix_mult_gpu_ver_2(const std::vector<__half> &input,
   __half *d_input;
   float *d_output;
 
-  cudaMalloc(&d_input, sizeof(__half) * n * n);
-  cudaMalloc(&d_output, sizeof(float) * n * n);
+  CHECK_CUDA_ERROR(cudaMalloc(&d_input, sizeof(__half) * n * n));
+  CHECK_CUDA_ERROR(cudaMalloc(&d_output, sizeof(float) * n * n));
 
-  cudaMemcpy(d_input, input.data(), sizeof(__half) * n * n,
-             cudaMemcpyHostToDevice);
+  CHECK_CUDA_ERROR(cudaMemcpy(d_input, input.data(), sizeof(__half) * n * n,
+                              cudaMemcpyHostToDevice));
 
   dim3 block_size(BLOCK_SIZE, BLOCK_SIZE);
   dim3 grid_size((n + block_size.x - 1) / block_size.x,
                  (n + block_size.y - 1) / block_size.y);
+  timer timer;
   GPU_MATMUL_V2<<<grid_size, block_size>>>(d_input, d_output, n);
   CHECK_CUDA_ERROR(cudaDeviceSynchronize());
+  double time = timer.elapsed();
+  std::cout << "Time of work MMGV2's kernel: " << time << std::endl;
 
   dim3 threads_per_block(THREADS_PER_BLOCK);
   dim3 blocks(n);
   softmax_kernel<<<blocks, threads_per_block>>>(d_output, n);
   CHECK_CUDA_ERROR(cudaDeviceSynchronize());
 
-  cudaMemcpy(output.data(), d_output, sizeof(float) * n * n,
-             cudaMemcpyDeviceToHost);
+  CHECK_CUDA_ERROR(cudaMemcpy(output.data(), d_output, sizeof(float) * n * n,
+                              cudaMemcpyDeviceToHost));
 
-  cudaFree(d_input);
-  cudaFree(d_output);
+  CHECK_CUDA_ERROR(cudaFree(d_input));
+  CHECK_CUDA_ERROR(cudaFree(d_output));
 }
