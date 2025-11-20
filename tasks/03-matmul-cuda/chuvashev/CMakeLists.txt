@@ -3,7 +3,16 @@ enable_language(CUDA CXX)
 set(target_suffix chuvashev)
 set(target_name "matmul_cuda_${target_suffix}")
 
-add_executable(${target_name} src/kernel.cu src/main.cpp)
+add_executable(${target_name} 
+	src/kernels/kernel_cutlass.cu
+	src/kernels/kernel_mmgv1.cu
+	src/kernels/kernel_mmgv2.cu
+	src/kernels/kernel_wmma.cu
+	src/kernels/kernel_softmax.cu
+	src/main.cpp
+	src/utils.cpp
+	include/utils.h
+)
 
 target_compile_features(${target_name} PRIVATE cxx_std_17)
 
@@ -24,3 +33,5 @@ set(CUTLASS_ROOT "" CACHE PATH "Path to the CUTLASS installation (root directory
 if(CUTLASS_ROOT)
     target_include_directories(${target_name} PRIVATE "${CUTLASS_ROOT}/include")
 endif()
+
+target_include_directories(${target_name} PRIVATE include/)

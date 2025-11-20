@@ -1,57 +1,99 @@
-#include <cuda_fp16.h>
-#include <cuda_runtime.h>
-#include <omp.h>
+#include <utils.h>
 
-#include <algorithm>
-#include <chrono>
-#include <cstdlib>
-#include <exception>
-#include <functional>
-#include <iomanip>
-#include <iostream>
-#include <random>
-#include <sstream>
-#include <stdexcept>
-#include <string>
-#include <vector>
-
-void make_input_matrix(std::vector<__half> &matrix, std::size_t n) {
-  // throw std::runtime_error("make_input_matrix not implemented");
-  std::random_device rd;
-  std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
-  std::mt19937 gen(rd());
-#pragma omp parallel for
-  for (int idx = 0; idx < n * n; ++idx) {
-    matrix[idx] = __float2half(dist(gen));
-  }
-}
-
-void run_openmp_reference(const std::vector<__half> &input,
-                          std::vector<float> &output, const std::size_t n) {
-  // throw std::runtime_error("OpenMP reference not implemented");
-
-  int block_size = 32;
-  int count_of_blocks = (n + block_size - 1) / block_size;
-
-#pragma omp parallel for
-  for (int ii = 0; ii < count_of_blocks; ++ii) {
-    int i_start = ii * block_size;
-    int i_end = (std::min)((ii + 1) * block_size, (int)n);
-    for (int jj = 0; jj < count_of_blocks; ++jj) {
-      int j_start = jj * block_size;
-      int j_end = (std::min)((jj + 1) * block_size, (int)n);
-      for (int kk = 0; kk < count_of_blocks; ++kk) {
-        int k_start = kk * block_size;
-        int k_end = (std::min)((kk + 1) * block_size, (int)n);
-        for (int i = i_start; i < i_end; ++i) {
-          for (int k = k_start; k < k_end; ++k) {
-            float value = __half2float(input[i * n + k]);
-            for (int j = j_start; j < j_end; ++j) {
-              output[i * n + j] += value * __half2float(input[k * n + j]);
-            }
-          }
-        }
-      }
+int main(int argc, char *argv[]) {
+  try {
+    /*if (argc != 2) {
+      std::cerr << "Usage: " << argv[0] << " <matrix_size_n>\n";
+      return EXIT_FAILURE;
     }
+
+    const std::size_t n = static_cast<std::size_t>(std::stoul(argv[1]));
+    if (n == 0) {
+      throw std::invalid_argument("Matrix size must be positive");
+    }*/
+
+    std::size_t n = 2048;
+    std::vector<__half> input(n * n, 0);
+    make_input_matrix(input, n);
+    // print_matrix<__half>(input, n);
+
+    std::vector<float> openmp_result(n * n, 0);
+    const double openmp_seconds = measure_seconds(
+        [&]() { return run_openmp_reference(input, openmp_result, n); });
+    std::cout << "OpenMP: " << format_time(openmp_seconds) << " sec\n";
+    // print_matrix<float>(openmp_result, n);
+
+    {
+      RunResult mmgv1_res;
+      try {
+        mmgv1_res.result.resize(n * n, 0);
+        mmgv1_res.seconds = measure_seconds([&]() {
+          return run_matrix_mult_gpu_ver_1(input, mmgv1_res.result, n);
+        });
+        mmgv1_res.diff = max_abs_diff(openmp_result, mmgv1_res.result);
+        mmgv1_res.success = true;
+      } catch (const std::exception &ex) {
+        std::cerr << "MMGV1 method failed: " << ex.what() << '\n';
+      }
+      print_report("MMGV1", mmgv1_res);
+      // print_matrix<float>(mmgv1_res.result, n);
+    }
+
+    {
+      RunResult mmgv2_res;
+      try {
+        mmgv2_res.result.resize(n * n, 0);
+        mmgv2_res.seconds = measure_seconds([&]() {
+          return run_matrix_mult_gpu_ver_2(input, mmgv2_res.result, n);
+        });
+        mmgv2_res.result.resize(n * n, 0);
+        mmgv2_res.seconds = measure_seconds([&]() {
+          return run_matrix_mult_gpu_ver_2(input, mmgv2_res.result, n);
+        });
+        mmgv2_res.diff = max_abs_diff(openmp_result, mmgv2_res.result);
+        mmgv2_res.success = true;
+      } catch (const std::exception &ex) {
+        std::cerr << "MMGV2 method failed: " << ex.what() << '\n';
+      }
+      print_report("MMGV2", mmgv2_res);
+      // print_matrix<float>(mmgv1_res.result, n);
+    }
+
+    {
+      RunResult wmma_res;
+      wmma_res.result.resize(n * n, 0);
+      try {
+        // warmup_wmma(input, n);
+        wmma_res.seconds = measure_seconds(
+            [&]() { return run_wmma(input, wmma_res.result, n); });
+        wmma_res.diff = max_abs_diff(openmp_result, wmma_res.result);
+        wmma_res.success = true;
+      } catch (const std::exception &ex) {
+        std::cerr << "WMMA method failed: " << ex.what() << '\n';
+      }
+      print_report("WMMA", wmma_res);
+    }
+
+    {
+      RunResult cutlass_res;
+      cutlass_res.result.resize(n * n, 0);
+      try {
+        cutlass_res.seconds = measure_seconds(
+            [&]() { return run_cutlass(input, cutlass_res.result, n); });
+        cutlass_res.diff = max_abs_diff(openmp_result, cutlass_res.result);
+        cutlass_res.success = true;
+      } catch (const std::exception &ex) {
+        std::cerr << "CUTLASS method failed: " << ex.what() << '\n';
+      }
+      print_report("CUTLASS", cutlass_res);
+    }
+
+    return EXIT_SUCCESS;
+  } catch (const std::exception &ex) {
+    std::cerr << "Error: " << ex.what() << '\n';
+  } catch (...) {
+    std::cerr << "Unknown error\n";
   }
+
+  return EXIT_FAILURE;
 }
