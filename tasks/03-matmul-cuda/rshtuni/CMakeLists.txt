@@ -21,7 +21,7 @@ find_package(CUDAToolkit REQUIRED)
 target_link_libraries(${target_name} PRIVATE CUDA::cudart)
 
 
-set(CUTLASS_ROOT "/home/vlad/cutlass/")
+set(CUTLASS_ROOT "" CACHE PATH "Path to the CUTLASS installation (root directory)")
 if(CUTLASS_ROOT)
     target_include_directories(${target_name} PRIVATE "${CUTLASS_ROOT}/include")
 endif()
