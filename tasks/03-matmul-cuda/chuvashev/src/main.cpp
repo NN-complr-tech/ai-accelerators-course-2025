@@ -18,16 +18,17 @@ int main(int argc, char *argv[]) {
 
     std::vector<__half> input_A(n * n, 0);
     std::vector<__half> input_B(n * n, 0);
-    
+
     make_input_matrix(input_A, n);
     make_input_matrix(input_B, n);
-    
+
     // print_matrix<__half>(input_A, n);
     // print_matrix<__half>(input_B, n);
 
     std::vector<float> openmp_result(n * n, 0);
-    const double openmp_seconds = measure_seconds(
-        [&]() { return run_openmp_reference(input_A, input_B, openmp_result, n); });
+    const double openmp_seconds = measure_seconds([&]() {
+      return run_openmp_reference(input_A, input_B, openmp_result, n);
+    });
     std::cout << "OpenMP: " << format_time(openmp_seconds) << " sec\n";
     // print_matrix<float>(openmp_result, n);
 
@@ -39,7 +40,8 @@ int main(int argc, char *argv[]) {
         mmgv1_res.result.clear();
         mmgv1_res.result.resize(n * n, 0);
         mmgv1_res.seconds = measure_seconds([&]() {
-          return run_matrix_mult_gpu_ver_1(input_A, input_B, mmgv1_res.result, n);
+          return run_matrix_mult_gpu_ver_1(input_A, input_B, mmgv1_res.result,
+                                           n);
         });
         mmgv1_res.diff = max_abs_diff(openmp_result, mmgv1_res.result);
         mmgv1_res.success = true;
@@ -58,7 +60,8 @@ int main(int argc, char *argv[]) {
         mmgv2_res.result.clear();
         mmgv2_res.result.resize(n * n, 0);
         mmgv2_res.seconds = measure_seconds([&]() {
-          return run_matrix_mult_gpu_ver_2(input_A, input_B, mmgv2_res.result, n);
+          return run_matrix_mult_gpu_ver_2(input_A, input_B, mmgv2_res.result,
+                                           n);
         });
         mmgv2_res.diff = max_abs_diff(openmp_result, mmgv2_res.result);
         mmgv2_res.success = true;
@@ -97,8 +100,9 @@ int main(int argc, char *argv[]) {
         warmup_cutlass(input_A, input_B, cutlass_res.result, n);
         cutlass_res.result.clear();
         cutlass_res.result.resize(n * n, 0);
-        cutlass_res.seconds = measure_seconds(
-            [&]() { return run_cutlass(input_A, input_B, cutlass_res.result, n); });
+        cutlass_res.seconds = measure_seconds([&]() {
+          return run_cutlass(input_A, input_B, cutlass_res.result, n);
+        });
         cutlass_res.diff = max_abs_diff(openmp_result, cutlass_res.result);
         cutlass_res.success = true;
       } catch (const std::exception &ex) {

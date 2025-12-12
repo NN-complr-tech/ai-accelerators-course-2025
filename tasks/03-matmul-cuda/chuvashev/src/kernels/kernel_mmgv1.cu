@@ -10,7 +10,8 @@ __global__ void GPU_MATMUL_V1(const __half *input_A, const __half *input_B,
   float sum = 0.0f;
 
   for (std::size_t idx = 0; idx < n; ++idx) {
-    sum += __half2float(input_A[i * n + idx]) * __half2float(input_B[idx * n + j]);
+    sum +=
+        __half2float(input_A[i * n + idx]) * __half2float(input_B[idx * n + j]);
   }
 
   output[i * n + j] = sum;

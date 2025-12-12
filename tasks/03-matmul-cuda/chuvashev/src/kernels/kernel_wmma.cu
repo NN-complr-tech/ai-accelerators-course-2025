@@ -70,7 +70,8 @@ void run_wmma(const std::vector<__half> &input_A,
                               cudaMemcpyHostToDevice));
 
   dim3 block_size(4 * WARP_SIZE, 4);
-  dim3 block_count(((n + block_size.x - 1) / block_size.x) * (WARP_SIZE / WMMA_SIZE),
+  dim3 block_count(
+      ((n + block_size.x - 1) / block_size.x) * (WARP_SIZE / WMMA_SIZE),
       (((n + block_size.y - 1) / block_size.y) + WMMA_SIZE - 1) / WMMA_SIZE);
   timer timer;
   WMMA_kernel<<<block_count, block_size>>>(d_input_A, d_input_B, d_output, n);
