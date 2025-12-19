@@ -15,7 +15,11 @@ def gen_golden_data_simple():
     N = args.N
 
     input_x = np.random.uniform(-1, 1, (N, N)).astype(np.float32)
+    # input_x = np.full((N, N), 0).astype(np.float32)
     golden = calc_softmax(input_x)
+
+    print(input_x[0:40])
+    print(golden[0:40])
 
     input_x.reshape(-1).tofile("./input/input_x.bin")
     golden.reshape(-1).tofile("./output/golden.bin")

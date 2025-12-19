@@ -9,7 +9,7 @@ error_tol = 1e-35
 
 def verify_result(output, golden):
     output = np.fromfile(output, dtype=np.float32).reshape(-1)
-    # print(output[0:40])
+    print(output[0:40])
     golden = np.fromfile(golden, dtype=np.float32).reshape(-1)
     # print(golden[0:40])
     different_element_results = np.isclose(output,
