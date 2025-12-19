@@ -1,31 +1,24 @@
-#!/usr/bin/python3
-# coding=utf-8
-#
-# Copyright (C) 2023-2024. Huawei Technologies Co., Ltd. All rights reserved.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# ===============================================================================
-
 import sys
 import numpy as np
 
-# for float16
-relative_tol = 1e-3
-absolute_tol = 1e-5
-error_tol = 1e-3
+# for float32
+relative_tol = 1e-5
+absolute_tol = 1e-7
+error_tol = 1e-35
 
 
 def verify_result(output, golden):
-    output = np.fromfile(output, dtype=np.float16).reshape(-1)
-    golden = np.fromfile(golden, dtype=np.float16).reshape(-1)
+    output = np.fromfile(output, dtype=np.float32).reshape(-1)
+    # print(output[0:40])
+    golden = np.fromfile(golden, dtype=np.float32).reshape(-1)
+    # print(golden[0:40])
     different_element_results = np.isclose(output,
                                            golden,
                                            rtol=relative_tol,
                                            atol=absolute_tol,
                                            equal_nan=True)
     different_element_indexes = np.where(different_element_results == False)[0]
+    print(f"Erro len: {len(different_element_indexes)}")
     for index in range(len(different_element_indexes)):
         real_index = different_element_indexes[index]
         golden_data = golden[real_index]

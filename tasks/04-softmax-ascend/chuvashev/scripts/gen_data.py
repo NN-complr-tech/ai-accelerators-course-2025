@@ -1,25 +1,24 @@
-#!/usr/bin/python3
-# coding=utf-8
-#
-# Copyright (C) 2023-2024. Huawei Technologies Co., Ltd. All rights reserved.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# ===============================================================================
-
 import numpy as np
+import argparse
 
+def calc_softmax(x):
+    e_x = np.exp(x)
+    return e_x / np.sum(e_x, axis=1, keepdims=True)
 
 def gen_golden_data_simple():
-    input_x = np.random.uniform(1, 100, [8, 2048]).astype(np.float16)
-    input_y = np.random.uniform(1, 100, [8, 2048]).astype(np.float16)
-    golden = (input_x + input_y).astype(np.float16)
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--N", type=int, required=True, help="matrix size N x N")
+    
+    args = parser.parse_args()
 
-    input_x.tofile("./input/input_x.bin")
-    input_y.tofile("./input/input_y.bin")
-    golden.tofile("./output/golden.bin")
+    N = args.N
 
+    input_x = np.random.uniform(-1, 1, (N, N)).astype(np.float32)
+    golden = calc_softmax(input_x)
+
+    input_x.reshape(-1).tofile("./input/input_x.bin")
+    golden.reshape(-1).tofile("./output/golden.bin")
 
 if __name__ == "__main__":
     gen_golden_data_simple()

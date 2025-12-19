@@ -6,9 +6,10 @@ CURRENT_DIR=$(
 
 BUILD_TYPE="Release"
 INSTALL_PREFIX="${CURRENT_DIR}/out"
+COUNT_OF_ELEMS=512
 
-SHORT=r:,v:,i:,b:,p:,
-LONG=run-mode:,soc-version:,install-path:,build-type:,install-prefix:,
+SHORT=r:,v:,i:,b:,p:,n:,
+LONG=run-mode:,soc-version:,install-path:,build-type:,install-prefix:,count-of-elems:,
 OPTS=$(getopt -a --options $SHORT --longoptions $LONG -- "$@")
 eval set -- "$OPTS"
 SOC_VERSION="Ascend910B1"
@@ -33,6 +34,10 @@ while :; do
         ;;
     -p | --install-prefix)
         INSTALL_PREFIX="$2"
+        shift 2
+        ;;
+    -n | --count-of-elems)
+        COUNT_OF_ELEMS="$2"
         shift 2
         ;;
     --)
@@ -97,5 +102,24 @@ rm -f ascendc_kernels_bbit
 cp ./out/bin/ascendc_kernels_bbit ./
 rm -rf input output
 mkdir -p input output
-
-./ascendc_kernels_bbit
+python3 scripts/gen_data.py --N ${COUNT_OF_ELEMS}
+(
+    export LD_LIBRARY_PATH=$(pwd)/out/lib:$(pwd)/out/lib64:$LD_LIBRARY_PATH
+    if [[ "$RUN_WITH_TOOLCHAIN" -eq 1 ]]; then
+        if [ "${RUN_MODE}" = "npu" ]; then
+            msprof op --application=./ascendc_kernels_bbit
+        elif [ "${RUN_MODE}" = "sim" ]; then
+            msprof op simulator --application=./ascendc_kernels_bbit
+        elif [ "${RUN_MODE}" = "cpu" ]; then
+            ./ascendc_kernels_bbit
+        fi
+    else
+        ./ascendc_kernels_bbit
+    fi
+)
+# tidy folder by delete log files
+if [ "${RUN_MODE}" = "sim" ]; then
+    rm -f *.log *.dump *.vcd *.toml *_log
+fi
+md5sum output/*.bin
+python3 scripts/verify_result.py output/output_y.bin output/golden.bin
