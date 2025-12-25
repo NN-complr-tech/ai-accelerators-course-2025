@@ -11,33 +11,30 @@
 
 int main()
 {
+  uint32_t N = 1024;
 
-  uint32_t M = ;
-  uint32_t K = ;
-  uint32_t N = ;
+  std::size_t matrix_byte_size = N * N * sizeof(float);
 
-  uint32_t matrix_a_byte_size = M * K * sizeof(float);
-  uitn32_t matrix_b_byte_size = N * K * sizeof(float);
-  uitn32_t matrix_c_byte_size = M * N * sizeof(float);
 
 #ifdef ASCENDC_CPU_DEBUG
+  uint8_t* a_mat = (uint8_t*)AscendC::GmAlloc(matrix_byte_size);
+  uint8_t* b_mat = (uint8_t*)AscendC::GmAlloc(matrix_byte_size);
+  uint8_t* c_mat = (uint8_t*)AscendC::GmAlloc(matrix_byte_size);
 
-  uint8_t* a_mat = (uint8_t*)AscendC::GmAlloc(matrix_a_byte_size),
-  uint8_t* b_mat = (uint8_t*)AscendC::GmAlloc(matrix_b_byte_size);
-  uint8_t* c_mat = (uint8_t*)AscendC::GmAlloc(matrix_c_byte_size);
+  ReadFile("./input/A.bin", matrix_byte_size, a_mat, matrix_byte_size);
+  ReadFile("./input/B.bin", matrix_byte_size, b_mat, matrix_byte_size);
 
-  ReadFile("./input/A.bin", matrix_a_byte_size, a_mat, matrix_a_byte_size);
-  ReadFile("./input/B.bin", matrix_b_byte_size, b_mat, matrix_b_byte_size);
+  //ICPU_RUN_KF();
 
-  ICPU_RUN_KF();
+  WriteFile("./output/output.bin", c_mat, matrix_byte_size);
 
-  WriteFile("./output/C.bin", matrix_c_byte_size, c_mat, matrix_c_byte_size);
-
+  AscendC::GmFree(a_mat);
+  AscendC::GmFree(b_mat);
+  AscendC::GmFree(c_mat);
 #else
-
+  std::cout << "ELSE" << std::endl;
 #endif
 
-  std::cout << "uioadsda" << std::endl;
 
   return 0;
 }

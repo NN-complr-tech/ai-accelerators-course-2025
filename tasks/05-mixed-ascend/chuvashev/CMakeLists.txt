@@ -15,7 +15,7 @@ endif()
 
 # ${KERNEL_FILES} are used to compile library, push files written by ascendc in ${KERNEL_FILES}.
 # ref to cmake/npu.cmake ascendc_library, cmake/cpu.cmake add_library
-file(GLOB KERNEL_FILES ${CMAKE_CURRENT_SOURCE_DIR}/custom_matmul_.cpp)
+file(GLOB KERNEL_FILES ${CMAKE_CURRENT_SOURCE_DIR}/custom_matmul.cpp)
 
 set(CUSTOM_ASCEND310P_LIST "Ascend310P1" "Ascend310P3")
 
@@ -29,7 +29,7 @@ endif()
 
 add_executable(ascendc_kernels_bbit
     ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/custom_matmul_.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/custom_matmul.cpp
 )
 
 target_compile_options(ascendc_kernels_bbit PRIVATE
