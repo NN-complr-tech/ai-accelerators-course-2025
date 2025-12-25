@@ -12,7 +12,10 @@ private:
     AscendC::TQue<AscendC::TPosition::A1, 1> in_queue_A1;
     AscendC::TQue<AscendC::TPosition::B1, 1> in_queue_B1;
 
+    AscendC::TQue<AscendC::TPosition::A2, 1> in_queue_A2;
+
     uint32_t n;
+    uint32_t blocks;
 
 
     __aicore__ void CopyND2NZ(AscendC::LocalTensor<float>& dst, AscendC::GlobalTensor<float>& src, const uint16_t heigth, const uint16_t width)
@@ -56,11 +59,38 @@ private:
         in_queue_B1.EnQue(b1); // сохраняем в очередь тензора
     }
 
+    __aicore__ inline void SplitA()
+    {
+        auto a1 = in_queue_A1.DeQue<float>(); // копируем из очереди матрицу БОЛЬШУЮ матрицу A
+        auto a2 = in_queue_A2.AllocTensor<float>(); // выделяем память под маленький блок матрицы A
+
+        uint32_t offset = 0;
+        
+        for (uint32_t i = 0; i < blocks; ++i)
+        {
+            AscendC::LoadData2DParams load_data_params;
+
+            load_data_params.repeatTimes = blocks;
+            load_data_params.srcStride = blocks;
+            load_data_params.ifTranspose = false;
+
+            AscendC::LoadData(a2[offset], a1[offset], load_data_params);
+
+            offset += 16 * 16;
+        }
+
+        in_queue_A1.FreeTensor(a1);
+        in_queue_A2.EnQue(a2);
+
+
+    }
+
 public:
 
     __aicore__ inline MatmulCustom(uint32_t n)
     {
         this->n = n;
+        this->blocks = 2;
     }
 
     __aicore__ inline void Init(AscendC::TPipe *p, GM_ADDR matrix_a, GM_ADDR matrix_b, GM_ADDR matrix_c)
@@ -75,12 +105,15 @@ public:
         pipe->InitBuffer(in_queue_A1, 1, n * n * sizeof(float));
         pipe->InitBuffer(in_queue_B1, 1, n * n * sizeof(float));
 
+        pipe->InitBuffer(in_queue_A2, 1, n * n * sizeof(float));
+
         AscendC::printf("Block idx: %u \n", block_idx);
     }
 
     __aicore__ inline void Process()
     {
-        
+        CopyIn(); // копируем A и B из глобальной памяти в A1 и B1, а также конвертируем ND в NZ для последующего удобного преобразования
+        SplitA(); // разделяем матрицу A на блоки
     }
 
 };
