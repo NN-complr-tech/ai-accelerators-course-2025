@@ -2,6 +2,15 @@
 
 struct TileInfo {
   uint32_t n;
+  uint32_t num_ai_cores;
+
+  uint32_t sizeof_value;
+  uint32_t tile_block;
+  uint32_t tile_block_length;
+
+  uint32_t block_count;
+  uint32_t plate_size;
+
 };
 
 class MatmulCustom
@@ -17,10 +26,16 @@ private:
     AscendC::TQue<AscendC::TPosition::B1, 1> in_queue_B1;
 
     AscendC::TQue<AscendC::TPosition::A2, 1> in_queue_A2;
+    
+    uint32_t blocks;
 
     uint32_t n;
-    uint32_t blocks;
+    uint32_t num_ai_cores;
+    uint32_t sizeof_value;
     uint32_t tile_block;
+    uint32_t tile_block_length;
+    uint32_t block_count;
+    uint32_t plate_size;
 
 
     __aicore__ void CopyND2NZ(AscendC::LocalTensor<float>& dst, AscendC::GlobalTensor<float>& src, const uint16_t heigth, const uint16_t width)
@@ -94,10 +109,15 @@ public:
 
     __aicore__ inline MatmulCustom(TileInfo *tile_ptr)
     {
-        this->n = tile_ptr->n;
         this->blocks = 2;
-
-        this->tile_block = 256;
+        
+        this->n = tile_ptr->n;
+        this->num_ai_cores = tile_ptr->num_ai_cores;
+        this->sizeof_value = tile_ptr->sizeof_value;
+        this->tile_block = tile_ptr->tile_block;
+        this->tile_block_length = tile_ptr->tile_block_length;
+        this->block_count = tile_ptr->block_count;
+        this->plate_size = tile_ptr->plate_size;
     }
 
     __aicore__ inline void Init(AscendC::TPipe *p, GM_ADDR matrix_a, GM_ADDR matrix_b, GM_ADDR matrix_c)
@@ -106,13 +126,14 @@ public:
 
         uint32_t block_idx = AscendC::GetBlockIdx();
 
-        global_matrix_a.SetGlobalBuffer((__gm__ float*)matrix_a);
-        global_matrix_b.SetGlobalBuffer((__gm__ float*)matrix_b);
+        global_matrix_a.SetGlobalBuffer((__gm__ float*)matrix_a + block_idx * tile_block * n); // на основе нужного block_idx получаем необходимый адрес на строчку в A
+        global_matrix_b.SetGlobalBuffer((__gm__ float*)matrix_b + block_idx * tile_block); // на основе нужного block_idx получаем необходимый адрес на колонку в B
+        global_matrix_c.SetGlobalBuffer((__gm__ float*)matrix_c + block_idx * tile_block * n + block_idx * tile_block); // на основе нужного block_idx получаем необходимый адрес в C
     
-        pipe->InitBuffer(in_queue_A1, 1, n * n * sizeof(float));
-        pipe->InitBuffer(in_queue_B1, 1, n * n * sizeof(float));
+        pipe->InitBuffer(in_queue_A1, 1, tile_block * tile_block * sizeof(float));
+        pipe->InitBuffer(in_queue_B1, 1, tile_block * tile_block * sizeof(float));
 
-        pipe->InitBuffer(in_queue_A2, 1, n * n * sizeof(float));
+        pipe->InitBuffer(in_queue_A2, 1, plate_size * plate_size * sizeof(float));
 
         AscendC::printf("Block idx: %u \n", block_idx);
     }
@@ -132,6 +153,14 @@ extern "C" __global__ __aicore__ void matmul_custom(GM_ADDR matrix_a, GM_ADDR ma
     TileInfo tile;
 
     tile.n = ((__gm__ TileInfo *)tiling)->n;
+
+    tile.n = ((__gm__ TileInfo *)tiling)->n;
+    tile.num_ai_cores = ((__gm__ TileInfo *)tiling)->num_ai_cores;
+    tile.sizeof_value = ((__gm__ TileInfo *)tiling)->sizeof_value;
+    tile.tile_block = ((__gm__ TileInfo *)tiling)->tile_block;
+    tile.tile_block_length = ((__gm__ TileInfo *)tiling)->tile_block_length;
+    tile.block_count = ((__gm__ TileInfo *)tiling)->block_count;
+    tile.plate_size = ((__gm__ TileInfo *)tiling)->plate_size;
 
     AscendC::TPipe pipe;
     MatmulCustom op(&tile);

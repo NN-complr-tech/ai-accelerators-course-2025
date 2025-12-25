@@ -12,17 +12,36 @@ extern "C" __global__ __aicore__ void matmul_custom(GM_ADDR matrix_a, GM_ADDR ma
 
 struct TileInfo {
   uint32_t n;
+  uint32_t num_ai_cores;
+
+  uint32_t sizeof_value;
+  uint32_t tile_block;
+  uint32_t tile_block_length;
+
+  uint32_t block_count;
+
+  uint32_t plate_size;
+
 };
 
 void GenerateTilingData(uint32_t n, TileInfo& tiling) {
   
   tiling.n = n;
+  tiling.num_ai_cores = 8;
+
+  tiling.sizeof_value = sizeof(float);
+  tiling.tile_block = 256;
+  tiling.tile_block_length = 256 * tiling.sizeof_value;
+
+  tiling.block_count = (n + tiling.tile_block - 1) / tiling.tile_block;
+
+  tiling.plate_size = 16;
 
 }
 
 int main()
 {
-  uint32_t n = 32;
+  uint32_t n = 512;
 
   std::size_t matrix_byte_size = n * n * sizeof(float);
   uint32_t block_dim = 8;
