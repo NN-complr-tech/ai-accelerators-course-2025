@@ -18,7 +18,7 @@ struct TileInfo {
       length_last_tile;  // кол-во элементов на последнем тайле (НЕ в байтах)
   uint32_t length_last_tile_align;  // кол-во элементов на последнем тайле с
                                     // выравниванием по 32 байтам (НЕ в байтах)
-  uint32_t buffer_num;              // = 2 для DoubleBuffering, 1 = для обычного
+  uint32_t buffer_num;
 };
 
 void GenerateTilingData(uint32_t n, TileInfo& tiling) {
