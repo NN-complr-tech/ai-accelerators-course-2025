@@ -15,27 +15,47 @@ struct TileInfo {
   uint32_t num_ai_cores;
 
   uint32_t sizeof_value;
-  uint32_t tile_block;
-  uint32_t tile_block_length;
+  
+  uint32_t block_size; // размер блока на одно ai-core
+  
+  uint32_t tile_count; // кол-во тайлов на одном ai-core
+  uint32_t tile_size; // размер блока, который пойдет в A1(B1)
+  uint32_t tile_last_size; // длина последнего tile
 
-  uint32_t block_count;
-
-  uint32_t plate_size;
-
+  uint32_t plate_size; // размер одно блока 16 на 16 xDD
+  uint32_t plate_count; // кол-во блоков 16 на 16 на одном tile
+  uint32_t plate_count_last_tile; // кол-во блоков 16 на 16 на последнем tile
 };
 
 void GenerateTilingData(uint32_t n, TileInfo& tiling) {
   
+  uint32_t max_tile_block_size = 512; // L2 cache = 512KB -> 512 * 1024 / (16 * 16 * 4) = 512 * 1024 / 1024 = 512
+
   tiling.n = n;
-  tiling.num_ai_cores = 8;
+  tiling.plate_size = 16;
+
+  uint32_t total_ai_cores_on_calculation = tiling.n / tiling.plate_size;
+  uint32_t max_ai_cores = 8;
+
+  if (total_ai_cores_on_calculation <= max_ai_cores)
+  {
+    tiling.num_ai_cores = total_ai_cores_on_calculation;
+  }
+  else
+  {
+    tiling.num_ai_cores = max_ai_cores;
+  }
 
   tiling.sizeof_value = sizeof(float);
-  tiling.tile_block = 256;
-  tiling.tile_block_length = 256 * tiling.sizeof_value;
+  tiling.block_size = tiling.n / tiling.num_ai_cores;
 
-  tiling.block_count = (n + tiling.tile_block - 1) / tiling.tile_block;
+  uint32_t count_of_plate = tiling.block_size / (tiling.plate_size * tiling.plate_size); // кол-во блоков 16 на 16 на одном ai-core
+  tiling.tile_size = max_tile_block_size;
+  tiling.tile_count = (count_of_plate + tiling.tile_size - 1) / tiling.tile_size; // кол-во tileов на одном ai-core
+  tiling.tile_last_size = (count_of_plate % tiling.tile_size == 0) ? tiling.tile_size : count_of_plate % tiling.tile_size;
 
-  tiling.plate_size = 16;
+  tiling.plate_count = tiling.tile_size / tiling.plate_size;
+  tiling.plate_count_last_tile = tiling.tile_last_size / tiling.plate_size;
 
 }
 
