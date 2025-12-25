@@ -1,5 +1,9 @@
 #include "kernel_operator.h"
 
+struct TileInfo {
+  uint32_t n;
+};
+
 class MatmulCustom
 {
 private:
@@ -16,6 +20,7 @@ private:
 
     uint32_t n;
     uint32_t blocks;
+    uint32_t tile_block;
 
 
     __aicore__ void CopyND2NZ(AscendC::LocalTensor<float>& dst, AscendC::GlobalTensor<float>& src, const uint16_t heigth, const uint16_t width)
@@ -87,10 +92,12 @@ private:
 
 public:
 
-    __aicore__ inline MatmulCustom(uint32_t n)
+    __aicore__ inline MatmulCustom(TileInfo *tile_ptr)
     {
-        this->n = n;
+        this->n = tile_ptr->n;
         this->blocks = 2;
+
+        this->tile_block = 256;
     }
 
     __aicore__ inline void Init(AscendC::TPipe *p, GM_ADDR matrix_a, GM_ADDR matrix_b, GM_ADDR matrix_c)
@@ -119,17 +126,22 @@ public:
 };
 
 
-extern "C" __global__ __aicore__ void matmul_custom(GM_ADDR matrix_a, GM_ADDR matrix_b, GM_ADDR matrix_c, uint32_t n)
+extern "C" __global__ __aicore__ void matmul_custom(GM_ADDR matrix_a, GM_ADDR matrix_b, GM_ADDR matrix_c, GM_ADDR tiling)
 {
+
+    TileInfo tile;
+
+    tile.n = ((__gm__ TileInfo *)tiling)->n;
+
     AscendC::TPipe pipe;
-    MatmulCustom op(n);
+    MatmulCustom op(&tile);
     op.Init(&pipe, matrix_a, matrix_b, matrix_c);
     op.Process();
 }
 
 #ifndef ASCENDC_CPU_DEBUG
-extern void matmul_custom_do(uint32_t block_dim, void* stream, uint8_t* matrix_a, uint8_t* matrix_b, uint8_t* matrix_c)
+extern void matmul_custom_do(uint32_t block_dim, void* stream, uint8_t* matrix_a, uint8_t* matrix_b, uint8_t* matrix_c, uint8_t* tiling)
 {
-    matmul_custom<<<block_dim, nullptr, stream>>>(matrix_a, matrix_b, matrix_c);
+    matmul_custom<<<block_dim, nullptr, stream>>>(matrix_a, matrix_b, matrix_c, tiling);
 }
 #endif
