@@ -75,7 +75,7 @@ class KernelSoftmax {
     pipe = p;
     uint32_t block_idx = AscendC::GetBlockIdx();
 
-    if (block_idx < count_of_based_blocks) { // считаем смещенеи по строкам
+    if (block_idx < count_of_based_blocks) {  // считаем смещенеи по строкам
       global_offset =
           block_idx * based_rows_per_block * M;  // тут с обработкой padding'a
       // global_offset_x = block_idx * based_rows_per_block * M; // тут с
@@ -104,8 +104,10 @@ class KernelSoftmax {
     y_global.SetGlobalBuffer((__gm__ float *)y + global_offset,
                              count_of_rows * M * sizeof(float));
 
-    pipe->InitBuffer(in_queue_x, buffer_num, tile_length); // с учетом DoubleBuffering
-    pipe->InitBuffer(out_queue_y, buffer_num, tile_length); // с учетом DoubleBuffering
+    pipe->InitBuffer(in_queue_x, buffer_num,
+                     tile_length);  // с учетом DoubleBuffering
+    pipe->InitBuffer(out_queue_y, buffer_num,
+                     tile_length);  // с учетом DoubleBuffering
 
     pipe->InitBuffer(buffer_for_sum, elems_per_tile * sizeof(float));
     pipe->InitBuffer(buffer_for_exp, elems_per_tile * sizeof(float));
@@ -152,8 +154,9 @@ class KernelSoftmax {
     in_queue_x.FreeTensor(x_local);
   }
 
-  __aicore__ inline void DivideOnExps(uint32_t r, uint32_t t, AscendC::LocalTensor<float> &exps,
-                                           AscendC::LocalTensor<float> &sums) {
+  __aicore__ inline void DivideOnExps(uint32_t r, uint32_t t,
+                                      AscendC::LocalTensor<float> &exps,
+                                      AscendC::LocalTensor<float> &sums) {
     uint32_t aligned_elems =
         (t == tiles_per_row - 1) ? length_last_tile_align : elems_per_tile;
     uint32_t actual_elems =
@@ -254,8 +257,7 @@ extern "C" __global__ __aicore__ void exp_custom(GM_ADDR x, GM_ADDR y,
   tile.length_last_tile = ((__gm__ TileInfo *)tiling)->length_last_tile;
   tile.length_last_tile_align =
       ((__gm__ TileInfo *)tiling)->length_last_tile_align;
-  tile.buffer_num =
-      ((__gm__ TileInfo *)tiling)->buffer_num;
+  tile.buffer_num = ((__gm__ TileInfo *)tiling)->buffer_num;
 
   KernelSoftmax op(&tile);
 
