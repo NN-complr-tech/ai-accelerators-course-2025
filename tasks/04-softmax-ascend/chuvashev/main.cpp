@@ -18,10 +18,12 @@ struct TileInfo {
       length_last_tile;  // кол-во элементов на последнем тайле (НЕ в байтах)
   uint32_t length_last_tile_align;  // кол-во элементов на последнем тайле с
                                     // выравниванием по 32 байтам (НЕ в байтах)
+  uint32_t buffer_num; // = 2 для DoubleBuffering, 1 = для обычного
 };
 
 void GenerateTilingData(uint32_t n, TileInfo& tiling) {
   tiling.N = n;
+  tiling.buffer_num = 2;
 
   if (tiling.N < 8) {
     tiling.num_of_ai_cores = tiling.N;
@@ -29,7 +31,7 @@ void GenerateTilingData(uint32_t n, TileInfo& tiling) {
     tiling.num_of_ai_cores = 8;
   }
 
-  tiling.tile_length = 512;
+  tiling.tile_length = 1024 / tiling.buffer_num; // учитываем, что DoubleBuffering
   tiling.sizeof_type = sizeof(float);
 
   std::size_t bytes = n * tiling.sizeof_type;
@@ -61,11 +63,11 @@ void GenerateTilingData(uint32_t n, TileInfo& tiling) {
     tiling.cutted_rows_per_block = n / tiling.num_of_ai_cores;
   }
 
-  if (tiling.M == tiling.N)  // данные выровнены по 32 байтам
+  if (tiling.M == tiling.N)  // данные выровнены по 32 байтам (нужно учесть, что DobuleBuffering)
   {
     tiling.elems_per_tile = tiling.tile_length / tiling.sizeof_type;
     tiling.tiles_per_row =
-        (tiling.N + tiling.elems_per_tile - 1) / tiling.elems_per_tile;
+        (tiling.N + tiling.elems_per_tile - 1) / tiling.elems_per_tile; // тут используется длина не alignутой строки
     tiling.length_last_tile = (tiling.N % tiling.elems_per_tile == 0)
                                   ? tiling.elems_per_tile
                                   : (tiling.N % tiling.elems_per_tile);
@@ -73,7 +75,7 @@ void GenerateTilingData(uint32_t n, TileInfo& tiling) {
   } else {
     tiling.elems_per_tile = tiling.tile_length / tiling.sizeof_type;
     tiling.tiles_per_row =
-        (tiling.N + tiling.elems_per_tile - 1) / tiling.elems_per_tile;
+        (tiling.N + tiling.elems_per_tile - 1) / tiling.elems_per_tile; // тут используется длина не alignутой строки
     tiling.length_last_tile = (tiling.N % tiling.elems_per_tile == 0)
                                   ? tiling.elems_per_tile
                                   : (tiling.N % tiling.elems_per_tile);
