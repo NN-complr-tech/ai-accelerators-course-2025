@@ -9,7 +9,6 @@
  */
 
 #include "data_utils.h"
-#include "const.h"
 #ifndef ASCENDC_CPU_DEBUG
 #include "acl/acl.h"
 extern void softmax_custom_do(uint32_t blockDim, void* stream, uint8_t* x,
@@ -18,6 +17,9 @@ extern void softmax_custom_do(uint32_t blockDim, void* stream, uint8_t* x,
 #include "tikicpulib.h"
 extern "C" __global__ __aicore__ void softmax_custom(GM_ADDR x, GM_ADDR z);
 #endif
+
+constexpr long BLOCK_DIM = 16;
+constexpr long SIZE = 64;
 
 int32_t main(int32_t argc, char* argv[]) {
   uint32_t blockDim = BLOCK_DIM;
@@ -47,12 +49,12 @@ int32_t main(int32_t argc, char* argv[]) {
   uint8_t *xHost, *zHost;
   uint8_t *xDevice, *zDevice;
 
-  CHECK_ACL(aclrtMallocHost((void **)(&xHost), inputByteSize));
-  CHECK_ACL(aclrtMallocHost((void **)(&zHost), outputByteSize));
+  CHECK_ACL(aclrtMallocHost((void**)(&xHost), inputByteSize));
+  CHECK_ACL(aclrtMallocHost((void**)(&zHost), outputByteSize));
   CHECK_ACL(
-      aclrtMalloc((void **)&xDevice, inputByteSize, ACL_MEM_MALLOC_HUGE_FIRST));
-  CHECK_ACL(aclrtMalloc((void **)&zDevice, outputByteSize,
-                        ACL_MEM_MALLOC_HUGE_FIRST));
+      aclrtMalloc((void**)&xDevice, inputByteSize, ACL_MEM_MALLOC_HUGE_FIRST));
+  CHECK_ACL(
+      aclrtMalloc((void**)&zDevice, outputByteSize, ACL_MEM_MALLOC_HUGE_FIRST));
 
   ReadFile("./input/input_matrix.bin", inputByteSize, xHost, inputByteSize);
 
