@@ -124,14 +124,15 @@ __aicore__ inline void MatmulKernel<aType, bType, cType, biasType>::Process(
   while (matmulObj.template Iterate<true>()) {  // Once Iterate, compute baseM *
                                                 // baseN, sync is set true here.
     MatmulCompute();                            // Get matmul compute result.
-    CopyOut(computeRound);  // Copy matmul out result to GM.
+    CopyOut(computeRound);                      // Copy matmul out result to GM.
     computeRound++;
   }
   matmulObj.End();
 }
 
 template <typename aType, typename bType, typename cType, typename biasType>
-__aicore__ inline void MatmulKernel<aType, bType, cType, biasType>::MatmulCompute() {
+__aicore__ inline void
+MatmulKernel<aType, bType, cType, biasType>::MatmulCompute() {
   matmulOutLocal = matmulOutQueue_.AllocTensor<cType>();
   matmulObj.template GetTensorC<true>(matmulOutLocal, false, true);
 }
@@ -142,7 +143,8 @@ __aicore__ inline void MatmulKernel<aType, bType, cType, biasType>::MatmulComput
  * @retval None
  */
 template <typename aType, typename bType, typename cType, typename biasType>
-__aicore__ inline void MatmulKernel<aType, bType, cType, biasType>::CopyOut(uint32_t count) {
+__aicore__ inline void MatmulKernel<aType, bType, cType, biasType>::CopyOut(
+    uint32_t count) {
   const uint32_t roundM = tiling.singleCoreM / tiling.baseM;
   const uint32_t roundN = tiling.singleCoreN / tiling.baseN;
   uint32_t startOffset = (count % roundM * tiling.baseM * tiling.N +
@@ -191,17 +193,17 @@ __aicore__ inline void MatmulKernel<aType, bType, cType, biasType>::CalcOffset(
  * @param  tilingGm: Tiling data addr.
  * @retval None
  */
-extern "C" __global__ __aicore__ void matmul_custom(
-    GM_ADDR a, GM_ADDR b, GM_ADDR bias, GM_ADDR c, GM_ADDR workspace,
-    GM_ADDR tilingGm) {
+extern "C" __global__ __aicore__ void matmul_custom(GM_ADDR a, GM_ADDR b,
+                                                    GM_ADDR bias, GM_ADDR c,
+                                                    GM_ADDR workspace,
+                                                    GM_ADDR tilingGm) {
   AscendC::TPipe pipe;
   TCubeTiling tiling;
   CopyTiling(&tiling, tilingGm);
 
   MatmulKernel<half, half, float, float> matmulKernel;
   matmulKernel.Init(a, b, bias, c, workspace, tiling, &pipe);
-  REGIST_MATMUL_OBJ(
-      &pipe, GetSysWorkSpacePtr(), matmulKernel.matmulObj,
-      &matmulKernel.tiling);  // Initialize the matmul object.
+  REGIST_MATMUL_OBJ(&pipe, GetSysWorkSpacePtr(), matmulKernel.matmulObj,
+                    &matmulKernel.tiling);  // Initialize the matmul object.
   matmulKernel.Process(&pipe);
 }
