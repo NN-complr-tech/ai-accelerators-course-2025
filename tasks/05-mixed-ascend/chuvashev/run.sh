@@ -8,8 +8,8 @@ BUILD_TYPE="Release"
 INSTALL_PREFIX="${CURRENT_DIR}/out"
 COUNT_OF_ELEMS=512
 
-SHORT=r:,v:,i:,b:,p:,
-LONG=run-mode:,soc-version:,install-path:,build-type:,install-prefix:,
+SHORT=r:,v:,i:,b:,p:,n:,
+LONG=run-mode:,soc-version:,install-path:,build-type:,install-prefix:,count-of-elems:,
 OPTS=$(getopt -a --options $SHORT --longoptions $LONG -- "$@")
 eval set -- "$OPTS"
 SOC_VERSION="Ascend310P3"

@@ -10,6 +10,99 @@ extern "C" void matmul_custom(uint8_t *a, uint8_t *b, uint8_t *c, uint8_t *works
 #endif
 extern void GenerateTiling(const char *socVersion, uint8_t *tilingBuf, uint32_t n);
 
+#ifndef ASCENDC_CPU_DEBUG
+#include "acl/acl.h"
+extern void exp_custom_do(uint32_t block_dim, void* stream, uint8_t* x,
+                          uint8_t* y, uint8_t* tiling);
+#else
+#include "tikicpulib.h"
+extern "C" __global__ __aicore__ void exp_custom(GM_ADDR x, GM_ADDR y,
+                                                 GM_ADDR tiling);
+#endif
+
+struct TileInfo {
+  uint32_t N;
+  uint32_t M;
+  uint32_t num_of_ai_cores;
+  uint32_t tile_length;  // длина одного тайла (В байтах)
+  uint32_t sizeof_type;  // размер 1 элемента (В байтах)
+  uint32_t count_of_based_blocks;
+  uint32_t count_of_cutted_blocks;
+  uint32_t based_rows_per_block;
+  uint32_t cutted_rows_per_block;
+  uint32_t elems_per_tile;  // кол-во элементов на каждый тайл (НЕ в байтах)
+  uint32_t tiles_per_row;
+  uint32_t
+      length_last_tile;  // кол-во элементов на последнем тайле (НЕ в байтах)
+  uint32_t length_last_tile_align;  // кол-во элементов на последнем тайле с
+                                    // выравниванием по 32 байтам (НЕ в байтах)
+  uint32_t buffer_num;
+};
+
+void GenerateTilingData(uint32_t n, TileInfo& tiling) {
+  tiling.N = n;
+  tiling.buffer_num = 2;
+
+  tiling.num_of_ai_cores = 1;
+
+  tiling.tile_length =
+      1024 / tiling.buffer_num;  // учитываем, что DoubleBuffering
+  tiling.sizeof_type = sizeof(float);
+
+  std::size_t bytes = n * tiling.sizeof_type;
+  std::size_t size_of_vec = 32;
+  tiling.M = tiling.N;
+
+  if (bytes % size_of_vec != 0) {
+    std::size_t cut_bytes = bytes % size_of_vec;
+    std::size_t additional_bytes = size_of_vec - cut_bytes;
+
+    tiling.M +=
+        additional_bytes / tiling.sizeof_type;  // выровняли по 32 байтам
+  }
+
+  uint32_t remainder_rows =
+      n % tiling.num_of_ai_cores;  // кол-во строк, которые не останутся не
+                                   // обработанными
+
+  if (remainder_rows == 0) {  // каждый ai-core получает одинковое число строк
+    tiling.count_of_based_blocks = tiling.num_of_ai_cores;
+    tiling.count_of_cutted_blocks = 0;
+    tiling.based_rows_per_block = n / tiling.num_of_ai_cores;
+    tiling.cutted_rows_per_block = 0;
+  } else {  // все блоки получают n / tiling.num_of_ai_cores строк, а также
+            // remainder_rows блоков получают дополнительно по 1 строке
+    tiling.count_of_based_blocks = remainder_rows;
+    tiling.count_of_cutted_blocks = tiling.num_of_ai_cores - remainder_rows;
+    tiling.based_rows_per_block = n / tiling.num_of_ai_cores + 1;
+    tiling.cutted_rows_per_block = n / tiling.num_of_ai_cores;
+  }
+
+  if (tiling.M == tiling.N)  // данные выровнены по 32 байтам (нужно учесть, что
+                             // DobuleBuffering)
+  {
+    tiling.elems_per_tile = tiling.tile_length / tiling.sizeof_type;
+    tiling.tiles_per_row =
+        (tiling.N + tiling.elems_per_tile - 1) /
+        tiling.elems_per_tile;  // тут используется длина не alignутой строки
+    tiling.length_last_tile = (tiling.N % tiling.elems_per_tile == 0)
+                                  ? tiling.elems_per_tile
+                                  : (tiling.N % tiling.elems_per_tile);
+    tiling.length_last_tile_align = tiling.length_last_tile;
+  } else {
+    tiling.elems_per_tile = tiling.tile_length / tiling.sizeof_type;
+    tiling.tiles_per_row =
+        (tiling.N + tiling.elems_per_tile - 1) /
+        tiling.elems_per_tile;  // тут используется длина не alignутой строки
+    tiling.length_last_tile = (tiling.N % tiling.elems_per_tile == 0)
+                                  ? tiling.elems_per_tile
+                                  : (tiling.N % tiling.elems_per_tile);
+    tiling.length_last_tile_align =
+        (tiling.M - tiling.N) + tiling.length_last_tile % tiling.elems_per_tile;
+  }
+}
+
+
 int32_t main(int32_t argc, char *argv[])
 {
   uint32_t n = 512;
@@ -40,10 +133,14 @@ int32_t main(int32_t argc, char *argv[])
     uint32_t blockDim = 1;
 #endif
 
+    TileInfo tiling_softmax;
+    GenerateTilingData(n, tiling_softmax);
+
 #ifdef ASCENDC_CPU_DEBUG
     uint8_t *a = (uint8_t *)AscendC::GmAlloc(aFileSize);
     uint8_t *b = (uint8_t *)AscendC::GmAlloc(bFileSize);
     uint8_t *c = (uint8_t *)AscendC::GmAlloc(cFileSize);
+    uint8_t *output = (uint8_t *)AscendC::GmAlloc(cFileSize);
     uint8_t *workspace = (uint8_t *)AscendC::GmAlloc(workspaceSize);
     uint8_t *tiling = (uint8_t *)AscendC::GmAlloc(tilingFileSize);
 
@@ -53,11 +150,16 @@ int32_t main(int32_t argc, char *argv[])
 
     ICPU_RUN_KF(matmul_custom, blockDim, a, b, c, workspace, tiling);
 
-    WriteFile("./output/output.bin", c, cFileSize);
+    WriteFile("./output/output_mult.bin", c, cFileSize);
+
+    ICPU_RUN_KF(exp_custom, tiling_softmax.num_of_ai_cores, c, output, (uint8_t*)(&tiling_softmax));
+
+    WriteFile("./output/output.bin", output, cFileSize);
 
     AscendC::GmFree((void *)a);
     AscendC::GmFree((void *)b);
     AscendC::GmFree((void *)c);
+    AscendC::GmFree((void *)output);
     AscendC::GmFree((void *)workspace);
     AscendC::GmFree((void *)tiling);
 #else
@@ -91,17 +193,12 @@ int32_t main(int32_t argc, char *argv[])
     CHECK_ACL(aclrtMemcpy(tilingHost, tilingFileSize, tilingBuf, tilingFileSize, ACL_MEMCPY_HOST_TO_HOST));
     CHECK_ACL(aclrtMemcpy(tilingDevice, tilingFileSize, tilingHost, tilingFileSize, ACL_MEMCPY_HOST_TO_DEVICE));
 
-    uint8_t *cHost;
     uint8_t *cDevice;
-    CHECK_ACL(aclrtMallocHost((void **)(&cHost), cFileSize));
     CHECK_ACL(aclrtMalloc((void **)&cDevice, cFileSize, ACL_MEM_MALLOC_HUGE_FIRST));
 
     ACLRT_LAUNCH_KERNEL(matmul_custom)
     (blockDim, stream, aDevice, bDevice, cDevice, workspaceDevice, tilingDevice);
     CHECK_ACL(aclrtSynchronizeStream(stream));
-
-    CHECK_ACL(aclrtMemcpy(cHost, cFileSize, cDevice, cFileSize, ACL_MEMCPY_DEVICE_TO_HOST));
-    WriteFile("./output/output.bin", cHost, cFileSize);
 
     CHECK_ACL(aclrtFree(aDevice));
     CHECK_ACL(aclrtFreeHost(aHost));
@@ -110,8 +207,29 @@ int32_t main(int32_t argc, char *argv[])
     CHECK_ACL(aclrtFree(workspaceDevice));
     CHECK_ACL(aclrtFree(tilingDevice));
     CHECK_ACL(aclrtFreeHost(tilingHost));
+
+    uint8_t *tiling_device, *output_device;
+    uint8_t *output_host;
+
+    CHECK_ACL(aclrtMallocHost((void **)(&output_host), cFileSize));
+    CHECK_ACL(aclrtMalloc((void **)&output_device, cFileSize, ACL_MEM_MALLOC_HUGE_FIRST));
+
+    CHECK_ACL(aclrtMalloc((void**)&tiling_device, sizeof(TileInfo),
+                            ACL_MEM_MALLOC_HUGE_FIRST));  
+    CHECK_ACL(aclrtMemcpy(tiling_device, sizeof(TileInfo), (uint8_t*)(&tiling_softmax),
+                        sizeof(TileInfo), ACL_MEMCPY_HOST_TO_DEVICE));   
+                        
+    exp_custom_do(tiling_softmax.num_of_ai_cores, stream, cDevice, output_device,
+                tiling_device);
+    CHECK_ACL(aclrtSynchronizeStream(stream));
+
+    CHECK_ACL(aclrtMemcpy(output_host, cFileSize, output_device, cFileSize, ACL_MEMCPY_DEVICE_TO_HOST));
+    WriteFile("./output/output.bin", output_host, cFileSize);
+
     CHECK_ACL(aclrtFree(cDevice));
-    CHECK_ACL(aclrtFreeHost(cHost));
+    CHECK_ACL(aclrtFree(output_device));
+    CHECK_ACL(aclrtFreeHost(output_host));
+    CHECK_ACL(aclrtFree(tiling_device));
 
     CHECK_ACL(aclrtDestroyStream(stream));
     CHECK_ACL(aclrtResetDevice(deviceId));

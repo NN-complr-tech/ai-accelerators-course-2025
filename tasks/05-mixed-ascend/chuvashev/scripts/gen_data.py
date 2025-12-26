@@ -11,14 +11,16 @@ def gen_golden_data():
 
     N = args.N
 
-    input_a = np.random.randint(1, 10, [N, N]).astype(np.float16)
-    input_b = np.random.randint(1, 10, [N, N]).astype(np.float16)
+    alpha = 0.001
 
-    # alpha = 0.001
+    input_a = np.random.randint(1, 10, [N, N]).astype(np.float16) * alpha
+    input_b = np.random.randint(1, 10, [N, N]).astype(np.float16) * alpha
+
+    matmul = (np.matmul(input_a.astype(np.float32), input_b.astype(np.float32))).astype(np.float32)
     
-    golden = (np.matmul(input_a.astype(np.float32), input_b.astype(np.float32))).astype(np.float32)
-    
-    # olden = np.where(golden >= 0, golden, golden * alpha)
+    exp_vals = np.exp(matmul)
+
+    softmax_actual = exp_vals / np.sum(exp_vals, axis=1, keepdims=True)
     
     os.system("mkdir -p input")
     os.system("mkdir -p output")
@@ -26,7 +28,7 @@ def gen_golden_data():
     input_a.tofile("./input/A.bin")
     input_b.tofile("./input/B.bin")
 
-    golden.tofile("./output/golden.bin")
+    softmax_actual.tofile("./output/golden.bin")
 
 
 if __name__ == "__main__":

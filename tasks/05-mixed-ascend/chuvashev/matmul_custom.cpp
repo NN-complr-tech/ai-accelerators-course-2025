@@ -133,4 +133,6 @@ extern "C" __global__ __aicore__ void matmul_custom(GM_ADDR a, GM_ADDR b, GM_ADD
     mm.SetTail(tailM, tailN);
     mm.IterateAll(gmC);
     mm.End();
+
+    pipe.Destroy();
 }
