@@ -45,8 +45,8 @@ void GenerateTiling(const char *socVersion, uint8_t *tilingBuf, uint32_t n) {
   bool isBias = false;
 
   int usedCoreNum = 2;
-  int32_t baseM = 128;
-  int32_t baseN = 256;
+  int32_t baseM = 16;
+  int32_t baseN = 16;
 
   optiling::TCubeTiling tilingData;
   auto ascendcPlatform =

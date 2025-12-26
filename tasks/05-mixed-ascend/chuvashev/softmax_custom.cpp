@@ -14,14 +14,14 @@ struct TileInfo {
   uint32_t tiles_per_row;
   uint32_t
       length_last_tile;  // кол-во элементов на последнем тайле (НЕ в байтах)
-  uint32_t length_last_tile_align;  // кол-во элементов на последнем тайле с выравниванием по 32 байтам (НЕ в байтах)
+  uint32_t length_last_tile_align;  // выравниванием по 32 байтам (НЕ в байтах)
   uint32_t buffer_num;
 };
 
 __aicore__ inline float ReduceSum(AscendC::LocalTensor<float> &src,
-                                  uint32_t reduceLen) {
+                                  uint32_t reduce_len) {
   float sum = 0;
-  for (uint32_t i = 0; i < reduceLen; ++i) {
+  for (uint32_t i = 0; i < reduce_len; ++i) {
     sum += src.GetValue(i);
   }
   return sum;
@@ -50,8 +50,8 @@ class KernelSoftmax {
   uint32_t count_of_rows = 0;
 
   AscendC::TPipe *pipe;
-  AscendC::TQue<AscendC::TPosition::VECIN, 2> in_queue_x;
-  AscendC::TQue<AscendC::TPosition::VECOUT, 2> out_queue_y;
+  AscendC::TQue<AscendC::TPosition::VECIN, 1> in_queue_x;
+  AscendC::TQue<AscendC::TPosition::VECOUT, 1> out_queue_y;
 
   AscendC::TBuf<AscendC::TPosition::VECCALC> buffer_for_sum;
   AscendC::TBuf<AscendC::TPosition::VECCALC> buffer_for_exp;
@@ -218,14 +218,17 @@ class KernelSoftmax {
       }
 
       const uint32_t shape[] = {1, elems_per_tile};
-      float value = 0.0f;
-#ifdef CUSTOM_ASCEND310P
-      value = ReduceSum(sum_tensor, shape[0]);
-#else
+      //       float value = 0.0f;
+      // #ifdef CUSTOM_ASCEND310P
+      //       value = ReduceSum(sum_tensor, shape[0]);
+      // #else
+      //       AscendC::ReduceSum<float, AscendC::Pattern::Reduce::AR>(
+      //           reduce_scalar, sum_tensor, shape, true);
+      //       value = reduce_scalar.GetValue(0);
+      // #endif
       AscendC::ReduceSum<float, AscendC::Pattern::Reduce::AR>(
           reduce_scalar, sum_tensor, shape, true);
-      value = reduce_scalar.GetValue(0);
-#endif
+      float value = reduce_scalar.GetValue(0);
       // AscendC::Duplicate(div, value, elems_per_tile);
       AscendC::Duplicate(sum_tensor, value, elems_per_tile);
 
