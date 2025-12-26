@@ -8,7 +8,9 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
  */
 #include "kernel_operator.h"
-#include "const.h"
+
+constexpr long BLOCK_DIM = 16;
+constexpr long SIZE = 96;
 
 constexpr int32_t TOTAL_LENGTH = SIZE * SIZE;  // total length of data
 constexpr int32_t ROWS_PER_BLOCK = SIZE / BLOCK_DIM;
