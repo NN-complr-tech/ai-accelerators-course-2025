@@ -14,8 +14,7 @@ struct TileInfo {
   uint32_t tiles_per_row;
   uint32_t
       length_last_tile;  // кол-во элементов на последнем тайле (НЕ в байтах)
-  uint32_t length_last_tile_align;  // кол-во элементов на последнем тайле с
-                                    // выравниванием по 32 байтам (НЕ в байтах)
+  uint32_t length_last_tile_align;  // выравниванием по 32 байтам (НЕ в байтах)
   uint32_t buffer_num;
 };
 
@@ -115,28 +114,18 @@ class KernelSoftmax {
     pipe->InitBuffer(buffer_for_reduce, sizeof(float));
   }
 
-  __aicore__ inline void CopyIn(uint32_t r, uint32_t t) {
+  __aicore__ inline void CopyIn(uint32_t offset, uint32_t elems) {
     AscendC::LocalTensor<float> x_local = in_queue_x.AllocTensor<float>();
-
-    uint32_t offset =
-        r * M + t * elems_per_tile;  // тут именно M так как мы работаем с
-                                     // выровненной матрицей
-    uint32_t elems =
-        (t == tiles_per_row - 1) ? length_last_tile_align : elems_per_tile;
 
     AscendC::DataCopy(x_local, x_global[offset], elems);
 
     in_queue_x.EnQue(x_local);
   }
 
-  __aicore__ inline void ComputeExpsAndSum(uint32_t r, uint32_t t,
+  __aicore__ inline void ComputeExpsAndSum(uint32_t aligned_elems,
+                                           uint32_t actual_elems,
                                            AscendC::LocalTensor<float> &exps,
                                            AscendC::LocalTensor<float> &sums) {
-    uint32_t aligned_elems =
-        (t == tiles_per_row - 1) ? length_last_tile_align : elems_per_tile;
-    uint32_t actual_elems =
-        (t == tiles_per_row - 1) ? length_last_tile : elems_per_tile;
-
     AscendC::LocalTensor<float> x_local = in_queue_x.DeQue<float>();
 
     // exp для alignутой строки
@@ -154,14 +143,10 @@ class KernelSoftmax {
     in_queue_x.FreeTensor(x_local);
   }
 
-  __aicore__ inline void DivideOnExps(uint32_t r, uint32_t t,
+  __aicore__ inline void DivideOnExps(uint32_t aligned_elems,
+                                      uint32_t actual_elems,
                                       AscendC::LocalTensor<float> &exps,
                                       AscendC::LocalTensor<float> &sums) {
-    uint32_t aligned_elems =
-        (t == tiles_per_row - 1) ? length_last_tile_align : elems_per_tile;
-    uint32_t actual_elems =
-        (t == tiles_per_row - 1) ? length_last_tile : elems_per_tile;
-
     AscendC::LocalTensor<float> x_local = in_queue_x.DeQue<float>();
     AscendC::LocalTensor<float> y_local = out_queue_y.AllocTensor<float>();
 
@@ -184,13 +169,8 @@ class KernelSoftmax {
     out_queue_y.EnQue(y_local);
   }
 
-  __aicore__ inline void CopyOut(uint32_t r, uint32_t t) {
+  __aicore__ inline void CopyOut(uint32_t offset, uint32_t aligned_elems) {
     // uint32_t offset = r * N + t * elems_per_tile;
-    uint32_t offset = r * M + t * elems_per_tile;
-    uint32_t aligned_elems =
-        (t == tiles_per_row - 1) ? length_last_tile_align : elems_per_tile;
-    uint32_t actual_elems =
-        (t == tiles_per_row - 1) ? length_last_tile : elems_per_tile;
 
     AscendC::LocalTensor<float> y_local = out_queue_y.DeQue<float>();
 
@@ -214,9 +194,18 @@ class KernelSoftmax {
     for (uint32_t r = 0; r < count_of_rows; ++r) {
       AscendC::Duplicate(sum_tensor, 0.0f, elems_per_tile);
 
+      uint32_t row_start_addres =
+          r * M;  // тут именно M так как мы работаем с выровненной матрицей
+
       for (uint32_t t = 0; t < tiles_per_row; ++t) {
-        CopyIn(r, t);
-        ComputeExpsAndSum(r, t, exp_tensor, sum_tensor);
+        uint32_t offset = row_start_addres + t * elems_per_tile;
+        uint32_t aligned_elems =
+            (t == tiles_per_row - 1) ? length_last_tile_align : elems_per_tile;
+        uint32_t actual_elems =
+            (t == tiles_per_row - 1) ? length_last_tile : elems_per_tile;
+
+        CopyIn(offset, aligned_elems);
+        ComputeExpsAndSum(aligned_elems, actual_elems, exp_tensor, sum_tensor);
       }
 
       const uint32_t shape[] = {1, elems_per_tile};
@@ -228,9 +217,15 @@ class KernelSoftmax {
       AscendC::Duplicate(sum_tensor, value, elems_per_tile);
 
       for (uint32_t t = 0; t < tiles_per_row; ++t) {
-        CopyIn(r, t);
-        DivideOnExps(r, t, exp_tensor, sum_tensor);
-        CopyOut(r, t);
+        uint32_t offset = row_start_addres + t * elems_per_tile;
+        uint32_t aligned_elems =
+            (t == tiles_per_row - 1) ? length_last_tile_align : elems_per_tile;
+        uint32_t actual_elems =
+            (t == tiles_per_row - 1) ? length_last_tile : elems_per_tile;
+
+        CopyIn(offset, aligned_elems);
+        DivideOnExps(aligned_elems, actual_elems, exp_tensor, sum_tensor);
+        CopyOut(offset, aligned_elems);
       }
     }
   }

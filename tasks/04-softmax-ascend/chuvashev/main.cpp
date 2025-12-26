@@ -16,8 +16,7 @@ struct TileInfo {
   uint32_t tiles_per_row;
   uint32_t
       length_last_tile;  // кол-во элементов на последнем тайле (НЕ в байтах)
-  uint32_t length_last_tile_align;  // кол-во элементов на последнем тайле с
-                                    // выравниванием по 32 байтам (НЕ в байтах)
+  uint32_t length_last_tile_align; // выравниванием по 32 байтам (НЕ в байтах)
   uint32_t buffer_num;
 };
 
@@ -25,10 +24,10 @@ void GenerateTilingData(uint32_t n, TileInfo& tiling) {
   tiling.N = n;
   tiling.buffer_num = 2;
 
-  if (tiling.N < 8) {
+  if (tiling.N < 16) {
     tiling.num_of_ai_cores = tiling.N;
   } else {
-    tiling.num_of_ai_cores = 8;
+    tiling.num_of_ai_cores = 16;
   }
 
   tiling.tile_length =
