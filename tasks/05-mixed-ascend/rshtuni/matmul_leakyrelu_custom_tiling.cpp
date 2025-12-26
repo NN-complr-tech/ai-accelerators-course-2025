@@ -13,10 +13,13 @@
 
 #include "tiling/platform/platform_ascendc.h"
 #include "tiling/tiling_api.h"
+
 using namespace matmul_tiling;
 using namespace std;
 
-#include "const.h"
+constexpr long BLOCK_DIM = 16;
+constexpr long SIZE = 96;
+
 /**
  * @brief  Generate matmul tiling.
  * @param  socVersion: Platform socversion.
