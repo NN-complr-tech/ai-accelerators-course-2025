@@ -33,28 +33,28 @@ int32_t main(int32_t argc, char* argv[]) {
   const char* socVersion = SOC_VERSION;
   auto ascendcPlatform =
       platform_ascendc::PlatformAscendCManager::GetInstance(socVersion);
-  
+
   size_t aFileSize = SIZE * SIZE * sizeof(float);
   size_t bFileSize = SIZE * SIZE * sizeof(float);
   size_t biasFileSize = SIZE * sizeof(float);
   size_t matmulOutputSize = SIZE * SIZE * sizeof(float);
   size_t softmaxOutputSize = SIZE * SIZE * sizeof(float);
-  
+
   size_t tilingFileSize = sizeof(TCubeTiling);
   size_t userWorkspaceSize = 0;
   size_t systemWorkspaceSize =
       static_cast<size_t>(ascendcPlatform->GetLibApiWorkSpaceSize());
   size_t workspaceSize = userWorkspaceSize + systemWorkspaceSize;
-  
+
   uint8_t* tilingBuf = (uint8_t*)malloc(tilingFileSize);
   GenerateTiling(socVersion, tilingBuf);
-  
+
 #ifdef CUSTOM_ASCEND310P
   uint32_t matmulBlockDim = 2;
 #else
   uint32_t matmulBlockDim = 1;
 #endif
-  
+
   uint32_t softmaxBlockDim = BLOCK_DIM;
 
 #ifdef ASCENDC_CPU_DEBUG
@@ -70,16 +70,16 @@ int32_t main(int32_t argc, char* argv[]) {
   ReadFile("./input/x2_gm.bin", bFileSize, b, bFileSize);
   ReadFile("./input/bias.bin", biasFileSize, bias, biasFileSize);
   memcpy_s(tiling, tilingFileSize, tilingBuf, tilingFileSize);
-  
+
   ICPU_RUN_KF(matmul_custom, matmulBlockDim, a, b, bias, matmul_output,
               workspace, tiling);
-  
+
   AscendC::SetKernelMode(KernelMode::AIV_MODE);
   ICPU_RUN_KF(softmax_custom, softmaxBlockDim, matmul_output, softmax_output);
 
   WriteFile("./output/matmul_output.bin", matmul_output, matmulOutputSize);
   WriteFile("./output/softmax_output.bin", softmax_output, softmaxOutputSize);
-  
+
   AscendC::GmFree((void*)a);
   AscendC::GmFree((void*)b);
   AscendC::GmFree((void*)bias);
@@ -155,7 +155,7 @@ int32_t main(int32_t argc, char* argv[]) {
 
   softmax_custom_do(softmaxBlockDim, stream, matmulOutputDevice,
                     softmaxOutputDevice);
-  
+
   CHECK_ACL(aclrtSynchronizeStream(stream));
 
   CHECK_ACL(aclrtMemcpy(matmulOutputHost, matmulOutputSize, matmulOutputDevice,
@@ -163,7 +163,7 @@ int32_t main(int32_t argc, char* argv[]) {
   CHECK_ACL(aclrtMemcpy(softmaxOutputHost, softmaxOutputSize,
                         softmaxOutputDevice, softmaxOutputSize,
                         ACL_MEMCPY_DEVICE_TO_HOST));
-  
+
   WriteFile("./output/matmul_output.bin", matmulOutputHost, matmulOutputSize);
   WriteFile("./output/softmax_output.bin", softmaxOutputHost,
             softmaxOutputSize);
@@ -186,7 +186,7 @@ int32_t main(int32_t argc, char* argv[]) {
   CHECK_ACL(aclrtResetDevice(deviceId));
   CHECK_ACL(aclFinalize());
 #endif
-  
+
   free(tilingBuf);
   return 0;
 }
