@@ -5,13 +5,14 @@ struct TileInfo {
     uint32_t n;
     uint32_t num_ai_cores;
     uint32_t sizeof_value;
-    uint32_t block_size;
-    uint32_t tile_count;
-    uint32_t tile_size;
-    uint32_t tile_last_size;
     uint32_t plate_size;
-    uint32_t plate_count;
-    uint32_t plate_count_last_tile;
+    uint32_t single_core_A;
+    uint32_t single_core_B;
+    uint32_t single_core_N;
+    uint32_t base;
+    uint32_t rows;
+    uint32_t cols;
+    uint32_t block_size;
 
 };
 
@@ -35,13 +36,14 @@ private:
     uint32_t n;
     uint32_t num_ai_cores;
     uint32_t sizeof_value;
-    uint32_t block_size;
-    uint32_t tile_count;
-    uint32_t tile_size;
-    uint32_t tile_last_size;
     uint32_t plate_size;
-    uint32_t plate_count;
-    uint32_t plate_count_last_tile;
+    uint32_t single_core_A;
+    uint32_t single_core_B;
+    uint32_t single_core_N;
+    uint32_t base;
+    uint32_t rows;
+    uint32_t cols;
+    uint32_t block_size;
 
 
     __aicore__ void CopyND2NZ(AscendC::LocalTensor<float>& dst, AscendC::GlobalTensor<float>& src, const uint16_t heigth, const uint16_t width)
@@ -78,8 +80,8 @@ private:
         auto b1 = in_queue_B1.AllocTensor<float>();
 
         // необходимо конвертировать А(B) в формат NZ (чтобы потом запихнуть в L1 cache и оттуда уже конвертировать в другой формат)
-        CopyND2NZ(a1, global_matrix_a, n, n);
-        CopyND2NZ(b1, global_matrix_b, n, n);
+        CopyND2NZ(a1, global_matrix_a, single_core_A, single_core_N);
+        CopyND2NZ(b1, global_matrix_b, single_core_N, single_core_B);
 
         in_queue_A1.EnQue(a1); // сохраняем в очередь тензора
         in_queue_B1.EnQue(b1); // сохраняем в очередь тензора
@@ -120,13 +122,14 @@ public:
         this->n = tile_ptr->n;
         this->num_ai_cores = tile_ptr->num_ai_cores;
         this->sizeof_value = tile_ptr->sizeof_value;
-        this->block_size = tile_ptr->block_size;
-        this->tile_count = tile_ptr->tile_count;
-        this->tile_size = tile_ptr->tile_size;
-        this->tile_last_size = tile_ptr->tile_last_size;
         this->plate_size = tile_ptr->plate_size;
-        this->plate_count = tile_ptr->plate_count;
-        this->plate_count_last_tile = tile_ptr->plate_count_last_tile;
+        this->single_core_A = tile_ptr->single_core_A;
+        this->single_core_B = tile_ptr->single_core_B;
+        this->single_core_N = tile_ptr->single_core_N;
+        this->base = tile_ptr->base;
+        this->rows = tile_ptr->rows;
+        this->cols = tile_ptr->cols;
+        this->block_size = tile_ptr->block_size;
 
     }
 
@@ -136,23 +139,27 @@ public:
 
         uint32_t block_idx = AscendC::GetBlockIdx();
 
-        global_matrix_a.SetGlobalBuffer((__gm__ float*)matrix_a + block_idx * n * block_size); // на основе нужного block_idx получаем необходимый адрес на строчку в A
-        global_matrix_b.SetGlobalBuffer((__gm__ float*)matrix_b + block_idx * block_size); // на основе нужного block_idx получаем необходимый адрес на колонку в B
-        global_matrix_c.SetGlobalBuffer((__gm__ float*)matrix_c + block_idx * block_size * n + block_idx * block_size); // на основе нужного block_idx получаем необходимый адрес в C
+        uint32_t offset_a = (block_idx / cols) * n * single_core_A;
+        uint32_t offset_b = (block_idx % cols) * single_core_B;
+        uint32_t offset_c = offset_a + offset_b;
+
+        global_matrix_a.SetGlobalBuffer((__gm__ float*)matrix_a + offset_a); // на основе нужного block_idx получаем необходимый адрес на строчку в A
+        global_matrix_b.SetGlobalBuffer((__gm__ float*)matrix_b + offset_b); // на основе нужного block_idx получаем необходимый адрес на колонку в B
+        global_matrix_c.SetGlobalBuffer((__gm__ float*)matrix_c + offset_c); // на основе нужного block_idx получаем необходимый адрес в C
     
-        pipe->InitBuffer(in_queue_A1, 1, tile_size * n * sizeof(float));
-        pipe->InitBuffer(in_queue_B1, 1, tile_size * n * sizeof(float));
+        pipe->InitBuffer(in_queue_A1, 1, single_core_A * single_core_N * sizeof(float));
+        pipe->InitBuffer(in_queue_B1, 1, single_core_B * single_core_N * sizeof(float));
 
         pipe->InitBuffer(in_queue_A2, 1, plate_size * plate_size * sizeof(float));
         pipe->InitBuffer(in_queue_B2, 1, plate_size * plate_size * sizeof(float));
 
-        AscendC::printf("Block idx: %u \n", block_idx);
+        AscendC::printf("Block idx: %u\tOffset_A %u\tOffset_B %u\tOffset_C %u\n", block_idx, offset_a, offset_b, offset_c);
     }
 
     __aicore__ inline void Process()
     {
         CopyIn(); // копируем A и B из глобальной памяти в A1 и B1, а также конвертируем ND в NZ для последующего удобного преобразования
-        SplitA(); // разделяем матрицу A на блоки
+        // SplitA(); // разделяем матрицу A на блоки
     }
 
 };
@@ -165,16 +172,17 @@ extern "C" __global__ __aicore__ void matmul_custom(GM_ADDR matrix_a, GM_ADDR ma
 
     tile.n = ((__gm__ TileInfo *)tiling)->n;
 
-    tile.n = ((__gm__ TileInfo *)tiling)->n;
-    tile.num_ai_cores = ((__gm__ TileInfo *)tiling)->num_ai_cores;
-    tile.sizeof_value = ((__gm__ TileInfo *)tiling)->sizeof_value;
-    tile.block_size = ((__gm__ TileInfo *)tiling)->block_size;
-    tile.tile_count = ((__gm__ TileInfo *)tiling)->tile_count;
-    tile.tile_size = ((__gm__ TileInfo *)tiling)->tile_size;
-    tile.tile_last_size = ((__gm__ TileInfo *)tiling)->tile_last_size;
-    tile.plate_size = ((__gm__ TileInfo *)tiling)->plate_size;
-    tile.plate_count = ((__gm__ TileInfo *)tiling)->plate_count;
-    tile.plate_count_last_tile = ((__gm__ TileInfo *)tiling)->plate_count_last_tile;
+    tile.n = ((__gm__ TileInfo*)tiling)->n;
+    tile.num_ai_cores = ((__gm__ TileInfo*)tiling)->num_ai_cores;
+    tile.sizeof_value = ((__gm__ TileInfo*)tiling)->sizeof_value;
+    tile.plate_size = ((__gm__ TileInfo*)tiling)->plate_size;
+    tile.single_core_A = ((__gm__ TileInfo*)tiling)->single_core_A;
+    tile.single_core_B = ((__gm__ TileInfo*)tiling)->single_core_B;
+    tile.single_core_N = ((__gm__ TileInfo*)tiling)->single_core_N;
+    tile.base = ((__gm__ TileInfo*)tiling)->base;
+    tile.rows = ((__gm__ TileInfo*)tiling)->rows;
+    tile.cols = ((__gm__ TileInfo*)tiling)->cols;
+    tile.block_size = ((__gm__ TileInfo*)tiling)->block_size;
 
     AscendC::TPipe pipe;
     MatmulCustom op(&tile);
