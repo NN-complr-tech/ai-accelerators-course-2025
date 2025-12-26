@@ -8,8 +8,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
  */
 
-#include "data_utils.h"
 #include "const.h"
+#include "data_utils.h"
 #ifndef ASCENDC_CPU_DEBUG
 #include "acl/acl.h"
 extern void softmax_custom_do(uint32_t blockDim, void* stream, uint8_t* x,
@@ -76,4 +76,5 @@ int32_t main(int32_t argc, char* argv[]) {
   CHECK_ACL(aclFinalize());
 #endif
   return 0;
+
 }
