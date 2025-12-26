@@ -49,12 +49,12 @@ int32_t main(int32_t argc, char* argv[]) {
   uint8_t *xHost, *zHost;
   uint8_t *xDevice, *zDevice;
 
-  CHECK_ACL(aclrtMallocHost((void**)(&xHost), inputByteSize));
-  CHECK_ACL(aclrtMallocHost((void**)(&zHost), outputByteSize));
+  CHECK_ACL(aclrtMallocHost((void **)(&xHost), inputByteSize));
+  CHECK_ACL(aclrtMallocHost((void **)(&zHost), outputByteSize));
   CHECK_ACL(
       aclrtMalloc((void**)&xDevice, inputByteSize, ACL_MEM_MALLOC_HUGE_FIRST));
-  CHECK_ACL(
-      aclrtMalloc((void**)&zDevice, outputByteSize, ACL_MEM_MALLOC_HUGE_FIRST));
+  CHECK_ACL(aclrtMalloc((void**)&zDevice, outputByteSize, 
+                        ACL_MEM_MALLOC_HUGE_FIRST));
 
   ReadFile("./input/input_matrix.bin", inputByteSize, xHost, inputByteSize);
 
@@ -79,3 +79,4 @@ int32_t main(int32_t argc, char* argv[]) {
 #endif
   return 0;
 }
+
