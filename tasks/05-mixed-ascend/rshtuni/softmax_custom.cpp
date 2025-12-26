@@ -37,11 +37,11 @@ class KernelSoftmax {
     pipe.InitBuffer(tmpBufCalc, TILE_LENGTH * sizeof(float));
     pipe.InitBuffer(tmpBuf, TILE_LENGTH * sizeof(float));
   }
-  
+
   __aicore__ inline void Process() {
     tmpCalc = tmpBufCalc.Get<float>();
     tmp = tmpBuf.Get<float>();
-    
+
     for (int32_t row = 0; row < ROWS_PER_BLOCK; row++) {
       int32_t row_offset = row * BLOCK_LENGTH;
 
@@ -75,27 +75,27 @@ class KernelSoftmax {
                       TILE_LENGTH);
     inQueueX.EnQue(xLocal);
   }
-  
+
   __aicore__ inline void ComputeSum(int32_t progress) {
     AscendC::LocalTensor<float> xLocal = inQueueX.DeQue<float>();
     AscendC::Exp(xLocal, xLocal, TILE_LENGTH);
 
     AscendC::Add(tmpCalc, tmpCalc, xLocal, TILE_LENGTH);
-    
+
     inQueueX.FreeTensor(xLocal);
   }
-  
+
   __aicore__ inline void ComputeSoftmax(int32_t progress) {
     AscendC::LocalTensor<float> xLocal = inQueueX.DeQue<float>();
     AscendC::LocalTensor<float> zLocal = outQueueZ.AllocTensor<float>();
 
     AscendC::Exp(xLocal, xLocal, TILE_LENGTH);
     AscendC::Div(zLocal, xLocal, tmpCalc, TILE_LENGTH);
-    
+
     outQueueZ.EnQue<float>(zLocal);
     inQueueX.FreeTensor(xLocal);
   }
-  
+
   __aicore__ inline void CopyOut(int32_t progress, int32_t row_offset) {
     AscendC::LocalTensor<float> zLocal = outQueueZ.DeQue<float>();
     AscendC::DataCopy(zGm[row_offset + progress * TILE_LENGTH], zLocal,
