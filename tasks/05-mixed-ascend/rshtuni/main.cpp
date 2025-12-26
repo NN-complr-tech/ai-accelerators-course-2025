@@ -10,7 +10,6 @@
 #include "data_utils.h"
 #include "kernel_tiling/kernel_tiling.h"
 #include "tiling/platform/platform_ascendc.h"
-#include "const.h"
 
 #ifndef ASCENDC_CPU_DEBUG
 #include "acl/acl.h"
@@ -26,6 +25,9 @@ extern "C" __global__ __aicore__ void softmax_custom(GM_ADDR x, GM_ADDR z);
 #endif
 
 extern void GenerateTiling(const char* socVersion, uint8_t* tilingBuf);
+
+constexpr long BLOCK_DIM = 16;
+constexpr long SIZE = 96;
 
 int32_t main(int32_t argc, char* argv[]) {
   const char* socVersion = SOC_VERSION;
