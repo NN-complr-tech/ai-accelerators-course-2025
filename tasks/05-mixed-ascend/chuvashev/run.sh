@@ -4,8 +4,9 @@ CURRENT_DIR=$(
     pwd
 )
 
-BUILD_TYPE="Debug"
+BUILD_TYPE="Release"
 INSTALL_PREFIX="${CURRENT_DIR}/out"
+COUNT_OF_ELEMS=512
 
 SHORT=r:,v:,i:,b:,p:,
 LONG=run-mode:,soc-version:,install-path:,build-type:,install-prefix:,
@@ -33,6 +34,10 @@ while :; do
         ;;
     -p | --install-prefix)
         INSTALL_PREFIX="$2"
+        shift 2
+        ;;
+    -n | --count-of-elems)
+        COUNT_OF_ELEMS="$2"
         shift 2
         ;;
     --)
@@ -97,19 +102,19 @@ rm -f ascendc_kernels_bbit
 cp ./out/bin/ascendc_kernels_bbit ./
 rm -rf input output
 mkdir -p input output
-python3 scripts/gen_data.py
+python3 scripts/gen_data.py --N ${COUNT_OF_ELEMS}
 (
     export LD_LIBRARY_PATH=$(pwd)/out/lib:$(pwd)/out/lib64:${_ASCEND_INSTALL_PATH}/lib64:$LD_LIBRARY_PATH
     if [[ "$RUN_WITH_TOOLCHAIN" -eq 1 ]]; then
         if [ "${RUN_MODE}" = "npu" ]; then
-            msprof op --application=./ascendc_kernels_bbit
+            msprof op --application=./ascendc_kernels_bbit ${COUNT_OF_ELEMS}
         elif [ "${RUN_MODE}" = "sim" ]; then
-            msprof op simulator --application=./ascendc_kernels_bbit
+            msprof op simulator --application=./ascendc_kernels_bbit ${COUNT_OF_ELEMS}
         elif [ "${RUN_MODE}" = "cpu" ]; then
-            ./ascendc_kernels_bbit
+            ./ascendc_kernels_bbit ${COUNT_OF_ELEMS}
         fi
     else
-        ./ascendc_kernels_bbit
+        ./ascendc_kernels_bbit ${COUNT_OF_ELEMS}
     fi
 )
 # tidy folder by delete log files

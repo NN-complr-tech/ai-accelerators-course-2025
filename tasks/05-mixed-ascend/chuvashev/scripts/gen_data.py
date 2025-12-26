@@ -1,10 +1,15 @@
 import numpy as np
 import os
-
+import argparse
 
 def gen_golden_data():
     
-    N = 32
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--N", type=int, required=True, help="matrix size N x N")
+    
+    args = parser.parse_args()
+
+    N = args.N
 
     input_a = np.random.randint(1, 10, [N, N]).astype(np.float16)
     input_b = np.random.randint(1, 10, [N, N]).astype(np.float16)
