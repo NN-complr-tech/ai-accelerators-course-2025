@@ -15,8 +15,8 @@ constexpr long SIZE = 96;
 constexpr int32_t TOTAL_LENGTH = SIZE * SIZE;  // total length of data
 constexpr int32_t ROWS_PER_BLOCK = SIZE / BLOCK_DIM;
 constexpr int32_t BLOCK_LENGTH = SIZE;  // length computed of each core
-constexpr int32_t TILE_NUM = 2;      // split data into 2 tiles for each core
-constexpr int32_t BUFFER_NUM = 2;    // tensor num for each queue
+constexpr int32_t TILE_NUM = 2;         // split data into 2 tiles for each core
+constexpr int32_t BUFFER_NUM = 2;       // tensor num for each queue
 constexpr int32_t TILE_LENGTH =
     BLOCK_LENGTH / TILE_NUM /
     BUFFER_NUM;  // separate to 2 parts, due to double buffer
