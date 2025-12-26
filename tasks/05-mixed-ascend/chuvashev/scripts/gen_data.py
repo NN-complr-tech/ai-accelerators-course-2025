@@ -29,6 +29,7 @@ def gen_golden_data():
     input_b.tofile("./input/B.bin")
 
     softmax_actual.tofile("./output/golden.bin")
+    matmul.tofile("./output/golden_mult.bin")
 
 
 if __name__ == "__main__":

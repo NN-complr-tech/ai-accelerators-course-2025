@@ -12,7 +12,7 @@ SHORT=r:,v:,i:,b:,p:,n:,
 LONG=run-mode:,soc-version:,install-path:,build-type:,install-prefix:,count-of-elems:,
 OPTS=$(getopt -a --options $SHORT --longoptions $LONG -- "$@")
 eval set -- "$OPTS"
-SOC_VERSION="Ascend310P3"
+SOC_VERSION="Ascend910B2"
 
 while :; do
     case "$1" in
