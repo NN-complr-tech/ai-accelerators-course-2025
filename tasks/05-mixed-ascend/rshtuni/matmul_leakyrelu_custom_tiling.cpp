@@ -51,7 +51,7 @@ void GenerateTiling(const char* socVersion, uint8_t* tilingBuf) {
 
   int usedCoreNum = 2;
   int baseM = SIZE;
-  int baseN = SIZE/usedCoreNum;
+  int baseN = SIZE / usedCoreNum;
 
   optiling::TCubeTiling tilingData;
   auto ascendcPlatform =
