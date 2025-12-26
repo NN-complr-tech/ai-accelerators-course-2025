@@ -96,14 +96,14 @@ int32_t main(int32_t argc, char* argv[]) {
   uint8_t* inputADevice;
   CHECK_ACL(aclrtMallocHost((void**)(&inputAHost), aFileSize));
   CHECK_ACL(
-      aclrtMalloc((void**)&inputADevice, aFileSize, ACL_MEM_MALLOC_HUGE_FIRST));
+      aclrtMalloc((void **)&inputADevice, aFileSize, ACL_MEM_MALLOC_HUGE_FIRST));
   ReadFile("./input/x1_gm.bin", aFileSize, inputAHost, aFileSize);
   CHECK_ACL(aclrtMemcpy(inputADevice, aFileSize, inputAHost, aFileSize,
                         ACL_MEMCPY_HOST_TO_DEVICE));
 
   uint8_t* inputBHost;
   uint8_t* inputBDevice;
-  CHECK_ACL(aclrtMallocHost((void**)(&inputBHost), bFileSize));
+  CHECK_ACL(aclrtMallocHost((void **)(&inputBHost), bFileSize));
   CHECK_ACL(
       aclrtMalloc((void**)&inputBDevice, bFileSize, ACL_MEM_MALLOC_HUGE_FIRST));
   ReadFile("./input/x2_gm.bin", bFileSize, inputBHost, bFileSize);
@@ -112,8 +112,8 @@ int32_t main(int32_t argc, char* argv[]) {
 
   uint8_t* inputBiasHost;
   uint8_t* inputBiasDevice;
-  CHECK_ACL(aclrtMallocHost((void**)(&inputBiasHost), biasFileSize));
-  CHECK_ACL(aclrtMalloc((void**)&inputBiasDevice, biasFileSize,
+  CHECK_ACL(aclrtMallocHost((void **)(&inputBiasHost), biasFileSize));
+  CHECK_ACL(aclrtMalloc((void **)&inputBiasDevice, biasFileSize,
                         ACL_MEM_MALLOC_HUGE_FIRST));
   ReadFile("./input/bias.bin", biasFileSize, inputBiasHost, biasFileSize);
   CHECK_ACL(aclrtMemcpy(inputBiasDevice, biasFileSize, inputBiasHost,
@@ -121,20 +121,20 @@ int32_t main(int32_t argc, char* argv[]) {
 
   uint8_t* matmulOutputHost;
   uint8_t* matmulOutputDevice;
-  CHECK_ACL(aclrtMallocHost((void**)(&matmulOutputHost), matmulOutputSize));
-  CHECK_ACL(aclrtMalloc((void**)&matmulOutputDevice, matmulOutputSize,
+  CHECK_ACL(aclrtMallocHost((void **)(&matmulOutputHost), matmulOutputSize));
+  CHECK_ACL(aclrtMalloc((void **)&matmulOutputDevice, matmulOutputSize,
                         ACL_MEM_MALLOC_HUGE_FIRST));
 
   uint8_t* softmaxOutputHost;
   uint8_t* softmaxOutputDevice;
-  CHECK_ACL(aclrtMallocHost((void**)(&softmaxOutputHost), softmaxOutputSize));
-  CHECK_ACL(aclrtMalloc((void**)&softmaxOutputDevice, softmaxOutputSize,
+  CHECK_ACL(aclrtMallocHost((void **)(&softmaxOutputHost), softmaxOutputSize));
+  CHECK_ACL(aclrtMalloc((void **)&softmaxOutputDevice, softmaxOutputSize,
                         ACL_MEM_MALLOC_HUGE_FIRST));
 
   uint8_t* tilingHost;
   uint8_t* tilingDevice;
-  CHECK_ACL(aclrtMallocHost((void**)(&tilingHost), tilingFileSize));
-  CHECK_ACL(aclrtMalloc((void**)&tilingDevice, tilingFileSize,
+  CHECK_ACL(aclrtMallocHost((void **)(&tilingHost), tilingFileSize));
+  CHECK_ACL(aclrtMalloc((void **)&tilingDevice, tilingFileSize,
                         ACL_MEM_MALLOC_HUGE_FIRST));
   CHECK_ACL(aclrtMemcpy(tilingHost, tilingFileSize, tilingBuf, tilingFileSize,
                         ACL_MEMCPY_HOST_TO_HOST));
@@ -142,7 +142,7 @@ int32_t main(int32_t argc, char* argv[]) {
                         tilingFileSize, ACL_MEMCPY_HOST_TO_DEVICE));
 
   uint8_t* workspaceDevice;
-  CHECK_ACL(aclrtMalloc((void**)&workspaceDevice, workspaceSize,
+  CHECK_ACL(aclrtMalloc((void **)&workspaceDevice, workspaceSize,
                         ACL_MEM_MALLOC_HUGE_FIRST));
 
   ACLRT_LAUNCH_KERNEL(matmul_custom)
