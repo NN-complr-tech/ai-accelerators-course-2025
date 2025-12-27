@@ -16,6 +16,7 @@ struct TileInfo {
       length_last_tile;  // кол-во элементов на последнем тайле (НЕ в байтах)
   uint32_t length_last_tile_align;  // кол-во элементов на последнем тайле с
                                     // выравниванием по 32 байтам (НЕ в байтах)
+  uint32_t buffer_num;
 };
 
 class KernelSoftmax {
@@ -33,6 +34,7 @@ class KernelSoftmax {
   uint32_t tiles_per_row;
   uint32_t length_last_tile;
   uint32_t length_last_tile_align;
+  uint32_t buffer_num;
 
   // uint32_t global_offset_x = 0;
   // uint32_t global_offset_y = 0;
@@ -40,13 +42,13 @@ class KernelSoftmax {
   uint32_t count_of_rows = 0;
 
   AscendC::TPipe *pipe;
-  AscendC::TQue<AscendC::TPosition::VECIN, 1> in_queue_x;
-  AscendC::TQue<AscendC::TPosition::VECOUT, 1> out_queue_y;
+  AscendC::TQue<AscendC::TPosition::VECIN, 2> in_queue_x;
+  AscendC::TQue<AscendC::TPosition::VECOUT, 2> out_queue_y;
 
   AscendC::TBuf<AscendC::TPosition::VECCALC> buffer_for_sum;
   AscendC::TBuf<AscendC::TPosition::VECCALC> buffer_for_exp;
   AscendC::TBuf<AscendC::TPosition::VECCALC> buffer_for_reduce;
-  AscendC::TBuf<AscendC::TPosition::VECCALC> buffer_for_div;
+  // AscendC::TBuf<AscendC::TPosition::VECCALC> buffer_for_div;
 
   AscendC::GlobalTensor<float> x_global;
   AscendC::GlobalTensor<float> y_global;
@@ -66,13 +68,14 @@ class KernelSoftmax {
     this->tiles_per_row = tile_ptr->tiles_per_row;
     this->length_last_tile = tile_ptr->length_last_tile;
     this->length_last_tile_align = tile_ptr->length_last_tile_align;
+    this->buffer_num = tile_ptr->buffer_num;
   }
 
   __aicore__ inline void Init(AscendC::TPipe *p, GM_ADDR x, GM_ADDR y) {
     pipe = p;
     uint32_t block_idx = AscendC::GetBlockIdx();
 
-    if (block_idx < count_of_based_blocks) {
+    if (block_idx < count_of_based_blocks) {  // считаем смещенеи по строкам
       global_offset =
           block_idx * based_rows_per_block * M;  // тут с обработкой padding'a
       // global_offset_x = block_idx * based_rows_per_block * M; // тут с
@@ -101,37 +104,29 @@ class KernelSoftmax {
     y_global.SetGlobalBuffer((__gm__ float *)y + global_offset,
                              count_of_rows * M * sizeof(float));
 
-    pipe->InitBuffer(in_queue_x, 1, tile_length);
-    pipe->InitBuffer(out_queue_y, 1, tile_length);
+    pipe->InitBuffer(in_queue_x, buffer_num,
+                     tile_length);  // с учетом DoubleBuffering
+    pipe->InitBuffer(out_queue_y, buffer_num,
+                     tile_length);  // с учетом DoubleBuffering
 
     pipe->InitBuffer(buffer_for_sum, elems_per_tile * sizeof(float));
     pipe->InitBuffer(buffer_for_exp, elems_per_tile * sizeof(float));
-    pipe->InitBuffer(buffer_for_div, elems_per_tile * sizeof(float));
+    // pipe->InitBuffer(buffer_for_div, elems_per_tile * sizeof(float));
     pipe->InitBuffer(buffer_for_reduce, sizeof(float));
   }
 
-  __aicore__ inline void CopyIn(uint32_t r, uint32_t t) {
+  __aicore__ inline void CopyIn(uint32_t offset, uint32_t elems) {
     AscendC::LocalTensor<float> x_local = in_queue_x.AllocTensor<float>();
-
-    uint32_t offset =
-        r * M + t * elems_per_tile;  // тут именно M так как мы работаем с
-                                     // выровненной матрицей
-    uint32_t elems =
-        (t == tiles_per_row - 1) ? length_last_tile_align : elems_per_tile;
 
     AscendC::DataCopy(x_local, x_global[offset], elems);
 
     in_queue_x.EnQue(x_local);
   }
 
-  __aicore__ inline void ComputeExpsAndSum(uint32_t r, uint32_t t,
+  __aicore__ inline void ComputeExpsAndSum(uint32_t aligned_elems,
+                                           uint32_t actual_elems,
                                            AscendC::LocalTensor<float> &exps,
                                            AscendC::LocalTensor<float> &sums) {
-    uint32_t aligned_elems =
-        (t == tiles_per_row - 1) ? length_last_tile_align : elems_per_tile;
-    uint32_t actual_elems =
-        (t == tiles_per_row - 1) ? length_last_tile : elems_per_tile;
-
     AscendC::LocalTensor<float> x_local = in_queue_x.DeQue<float>();
 
     // exp для alignутой строки
@@ -144,45 +139,51 @@ class KernelSoftmax {
       AscendC::Duplicate(exps, 0.0f, mask, 1, 1, 1);
     }
 
+    // if (aligned_elems != actual_elems) {
+    //   for (uint32_t i = actual_elems; i < aligned_elems; ++i) {
+    //       exps.SetValue(i, 0.0f);
+    //   }
+    // }
+
     AscendC::Add(sums, sums, exps, aligned_elems);
 
     in_queue_x.FreeTensor(x_local);
   }
 
-  __aicore__ inline void DivideOnExps(uint32_t r, uint32_t t) {
-    uint32_t aligned_elems =
-        (t == tiles_per_row - 1) ? length_last_tile_align : elems_per_tile;
-    uint32_t actual_elems =
-        (t == tiles_per_row - 1) ? length_last_tile : elems_per_tile;
-
+  __aicore__ inline void DivideOnExps(uint32_t aligned_elems,
+                                      uint32_t actual_elems,
+                                      AscendC::LocalTensor<float> &exps,
+                                      AscendC::LocalTensor<float> &sums) {
     AscendC::LocalTensor<float> x_local = in_queue_x.DeQue<float>();
     AscendC::LocalTensor<float> y_local = out_queue_y.AllocTensor<float>();
 
-    AscendC::LocalTensor<float> div = buffer_for_div.Get<float>();
+    // AscendC::LocalTensor<float> div = buffer_for_div.Get<float>();
 
-    AscendC::Exp(x_local, x_local, aligned_elems);
+    AscendC::Exp(exps, x_local, aligned_elems);
 
     if (aligned_elems != actual_elems) {
       uint64_t mask0 =
           ((uint64_t)1 << aligned_elems) - ((uint64_t)1 << actual_elems);
       uint64_t mask[2] = {mask0, 0};
 
-      AscendC::Duplicate(x_local, 0.0f, mask, 1, 1, 1);
+      AscendC::Duplicate(exps, 0.0f, mask, 1, 1, 1);
     }
 
-    AscendC::Div(y_local, x_local, div, aligned_elems);
+    // if (aligned_elems != actual_elems) {
+    //   for (uint32_t i = actual_elems; i < aligned_elems; ++i) {
+    //       exps.SetValue(i, 0.0f);
+    //   }
+    // }
+
+    // AscendC::Div(y_local, exps, div, aligned_elems);
+    AscendC::Div(y_local, exps, sums, aligned_elems);
 
     in_queue_x.FreeTensor(x_local);
     out_queue_y.EnQue(y_local);
   }
 
-  __aicore__ inline void CopyOut(uint32_t r, uint32_t t) {
+  __aicore__ inline void CopyOut(uint32_t offset, uint32_t aligned_elems) {
     // uint32_t offset = r * N + t * elems_per_tile;
-    uint32_t offset = r * M + t * elems_per_tile;
-    uint32_t aligned_elems =
-        (t == tiles_per_row - 1) ? length_last_tile_align : elems_per_tile;
-    uint32_t actual_elems =
-        (t == tiles_per_row - 1) ? length_last_tile : elems_per_tile;
 
     AscendC::LocalTensor<float> y_local = out_queue_y.DeQue<float>();
 
@@ -199,16 +200,25 @@ class KernelSoftmax {
         buffer_for_exp.Get<float>();  // тензор для хранения exp текущего тайла
     AscendC::LocalTensor<float> reduce_scalar =
         buffer_for_reduce.Get<float>();  // хранит значение редуцированной суммы
-    AscendC::LocalTensor<float> div =
-        buffer_for_div.Get<float>();  // хранит элементы, на которые будем
-                                      // делить тайлы в строке
+    // AscendC::LocalTensor<float> div =
+    //     buffer_for_div.Get<float>();  // хранит элементы, на которые будем
+    //                                   // делить тайлы в строке
 
     for (uint32_t r = 0; r < count_of_rows; ++r) {
       AscendC::Duplicate(sum_tensor, 0.0f, elems_per_tile);
 
+      uint32_t row_start_addres =
+          r * M;  // тут именно M так как мы работаем с выровненной матрицей
+
       for (uint32_t t = 0; t < tiles_per_row; ++t) {
-        CopyIn(r, t);
-        ComputeExpsAndSum(r, t, exp_tensor, sum_tensor);
+        uint32_t offset = row_start_addres + t * elems_per_tile;
+        uint32_t aligned_elems =
+            (t == tiles_per_row - 1) ? length_last_tile_align : elems_per_tile;
+        uint32_t actual_elems =
+            (t == tiles_per_row - 1) ? length_last_tile : elems_per_tile;
+
+        CopyIn(offset, aligned_elems);
+        ComputeExpsAndSum(aligned_elems, actual_elems, exp_tensor, sum_tensor);
       }
 
       const uint32_t shape[] = {1, elems_per_tile};
@@ -216,12 +226,19 @@ class KernelSoftmax {
           reduce_scalar, sum_tensor, shape, true);
 
       float value = reduce_scalar.GetValue(0);
-      AscendC::Duplicate(div, value, elems_per_tile);
+      // AscendC::Duplicate(div, value, elems_per_tile);
+      AscendC::Duplicate(sum_tensor, value, elems_per_tile);
 
       for (uint32_t t = 0; t < tiles_per_row; ++t) {
-        CopyIn(r, t);
-        DivideOnExps(r, t);
-        CopyOut(r, t);
+        uint32_t offset = row_start_addres + t * elems_per_tile;
+        uint32_t aligned_elems =
+            (t == tiles_per_row - 1) ? length_last_tile_align : elems_per_tile;
+        uint32_t actual_elems =
+            (t == tiles_per_row - 1) ? length_last_tile : elems_per_tile;
+
+        CopyIn(offset, aligned_elems);
+        DivideOnExps(aligned_elems, actual_elems, exp_tensor, sum_tensor);
+        CopyOut(offset, aligned_elems);
       }
     }
   }
@@ -248,6 +265,7 @@ extern "C" __global__ __aicore__ void exp_custom(GM_ADDR x, GM_ADDR y,
   tile.length_last_tile = ((__gm__ TileInfo *)tiling)->length_last_tile;
   tile.length_last_tile_align =
       ((__gm__ TileInfo *)tiling)->length_last_tile_align;
+  tile.buffer_num = ((__gm__ TileInfo *)tiling)->buffer_num;
 
   KernelSoftmax op(&tile);
 
