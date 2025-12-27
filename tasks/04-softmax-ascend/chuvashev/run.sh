@@ -6,7 +6,7 @@ CURRENT_DIR=$(
 
 BUILD_TYPE="Release"
 INSTALL_PREFIX="${CURRENT_DIR}/out"
-COUNT_OF_ELEMS=512
+COUNT_OF_ELEMS=2048
 
 SHORT=r:,v:,i:,b:,p:,n:,
 LONG=run-mode:,soc-version:,install-path:,build-type:,install-prefix:,count-of-elems:,
