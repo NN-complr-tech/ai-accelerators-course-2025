@@ -52,7 +52,7 @@ void GenerateTilingSoftMax(uint32_t n, TileInfo &tiling) {
   tiling.num_of_ai_cores = 1;
 
   tiling.tile_length =
-      1024 / tiling.buffer_num;  // учитываем, что DoubleBuffering
+      512 / tiling.buffer_num;  // учитываем, что DoubleBuffering
   tiling.sizeof_type = sizeof(float);
 
   std::size_t bytes = n * tiling.sizeof_type;
@@ -300,9 +300,9 @@ int32_t main(int32_t argc, char *argv[]) {
   CHECK_ACL(aclrtMalloc((void **)&c_device, output_file_size,
                         ACL_MEM_MALLOC_HUGE_FIRST));
 
-  ACLRT_LAUNCH_KERNEL(matmul_custom)(blockDim, stream, a_device, b_device,
-                                     c_device, workspace_device,
-                                     tiling_matmul_device);
+  ACLRT_LAUNCH_KERNEL(matmul_custom)
+  (blockDim, stream, a_device, b_device, c_device, workspace_device,
+   tiling_matmul_device);
   CHECK_ACL(aclrtSynchronizeStream(stream));
 
   CHECK_ACL(aclrtMemcpy(c_host, output_file_size, c_device, output_file_size,
@@ -335,9 +335,9 @@ int32_t main(int32_t argc, char *argv[]) {
   CHECK_ACL(aclrtMalloc((void **)&output_device, output_file_size,
                         ACL_MEM_MALLOC_HUGE_FIRST));
 
-  ACLRT_LAUNCH_KERNEL(exp_custom)(tiling_softmax.num_of_ai_cores, stream,
-                                  c_device, output_device,
-                                  tiling_softmax_device);
+  ACLRT_LAUNCH_KERNEL(exp_custom)
+  (tiling_softmax.num_of_ai_cores, stream, c_device, output_device,
+   tiling_softmax_device);
   // exp_custom_do(tiling_softmax.num_of_ai_cores, stream, c_device,
   // output_device, tiling_softmax_device);
   CHECK_ACL(aclrtSynchronizeStream(stream));
