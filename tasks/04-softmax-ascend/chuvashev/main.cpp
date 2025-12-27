@@ -16,8 +16,7 @@ struct TileInfo {
   uint32_t tiles_per_row;
   uint32_t
       length_last_tile;  // кол-во элементов на последнем тайле (НЕ в байтах)
-  uint32_t length_last_tile_align;  // кол-во элементов на последнем тайле с
-                                    // выравниванием по 32 байтам (НЕ в байтах)
+  uint32_t length_last_tile_align;  // выравниванием по 32 байтам (НЕ в байтах)
   uint32_t buffer_num;
 };
 
